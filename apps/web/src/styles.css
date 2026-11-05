@@ -167,8 +167,6 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  /* Roomy head while expanded; the collapsed rail shrinks to the mark alone. */
-  min-height: 76px;
   padding: 0 6px 10px;
 }
 
@@ -363,7 +361,6 @@ button {
   .is-collapsed .sidebar-head {
     align-items: center;
     justify-content: center;
-    min-height: 0;
     padding-left: 0;
     padding-right: 0;
   }
