@@ -18,11 +18,14 @@ import {
 import {
   layoutMatrix,
   layoutQuadrant,
+  pointToScore,
   quadrantBounds,
   type CardLayout,
   type ClusterLayout,
-  type MatrixLayout
+  type MatrixLayout,
+  type Rect
 } from "../lib/layout";
+import { translations, type Locale } from "../lib/i18n";
 
 interface MatrixProps {
   tasks: Task[];
@@ -30,6 +33,7 @@ interface MatrixProps {
   selectedId: string | null;
   forceIndividual: boolean;
   focusQuadrant?: KnownQuadrant | null;
+  locale?: Locale;
   onSelect: (task: Task) => void;
   onComplete: (task: Task) => void;
   onNudge: (task: Task, patch: { importance?: number; urgency?: number }) => void;
@@ -43,6 +47,15 @@ interface HoverState {
   y: number;
   task?: Task;
   cluster?: ClusterLayout;
+}
+
+interface DragState {
+  task: Task;
+  originRect: Rect;
+  startPointer: { x: number; y: number };
+  currentPointer: { x: number; y: number };
+  isActivated: boolean;
+  hasBrokenDeadband: boolean;
 }
 
 const QUAD_ORDER: Array<{
@@ -61,6 +74,7 @@ export function Matrix({
   selectedId,
   forceIndividual,
   focusQuadrant = null,
+  locale = "zh",
   onSelect,
   onComplete,
   onNudge,
@@ -73,6 +87,112 @@ export function Matrix({
   const [hover, setHover] = useState<HoverState | null>(null);
   const [openClusterId, setOpenClusterId] = useState<string | null>(null);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const dragTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      setDragState((current) => {
+        if (!current) return null;
+        const dx = event.clientX - current.startPointer.x;
+        const dy = event.clientY - current.startPointer.y;
+        const dist = Math.hypot(dx, dy);
+
+        // 未激活前如果快速滑动手势，取消蓄力长按
+        if (!current.isActivated && dist > 8) {
+          if (dragTimerRef.current !== null) {
+            window.clearTimeout(dragTimerRef.current);
+            dragTimerRef.current = null;
+          }
+          return null;
+        }
+
+        const broken = current.isActivated && (current.hasBrokenDeadband || dist >= 15);
+        return {
+          ...current,
+          currentPointer: { x: event.clientX, y: event.clientY },
+          hasBrokenDeadband: broken
+        };
+      });
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (dragTimerRef.current !== null) {
+        window.clearTimeout(dragTimerRef.current);
+        dragTimerRef.current = null;
+      }
+
+      setDragState((current) => {
+        if (!current) return null;
+        if (current.isActivated && current.hasBrokenDeadband && matrixRef.current) {
+          const matrixRect = matrixRef.current.getBoundingClientRect();
+          const dropX = event.clientX - matrixRect.left;
+          const dropY = event.clientY - matrixRect.top;
+          let { importance, urgency } = pointToScore(
+            { x: dropX, y: dropY },
+            matrixRect.width,
+            matrixRect.height
+          );
+          // 语义磁吸
+          if (Math.abs(importance - threshold) <= 2) {
+            importance = importance >= threshold ? threshold + 3 : threshold - 3;
+          }
+          if (Math.abs(urgency - threshold) <= 2) {
+            urgency = urgency >= threshold ? threshold + 3 : threshold - 3;
+          }
+          onNudge(current.task, { importance, urgency });
+        }
+        return null;
+      });
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [dragState, onNudge, threshold]);
+
+  function handleStartDrag(
+    event: React.PointerEvent,
+    task: Task,
+    originRect: Rect
+  ) {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest(".complete-btn") || target.closest("input, textarea, button.complete-btn")) {
+      return;
+    }
+
+    if (dragTimerRef.current !== null) {
+      window.clearTimeout(dragTimerRef.current);
+    }
+
+    const isModifier = event.altKey || Boolean(target.closest(".card-drag-handle"));
+
+    const initialDrag: DragState = {
+      task,
+      originRect,
+      startPointer: { x: event.clientX, y: event.clientY },
+      currentPointer: { x: event.clientX, y: event.clientY },
+      isActivated: isModifier,
+      hasBrokenDeadband: false
+    };
+
+    setDragState(initialDrag);
+
+    if (!isModifier) {
+      dragTimerRef.current = window.setTimeout(() => {
+        setDragState((curr) => (curr ? { ...curr, isActivated: true } : null));
+        dragTimerRef.current = null;
+      }, 220);
+    }
+  }
 
   useLayoutEffect(() => {
     const element = matrixRef.current;
@@ -244,7 +364,9 @@ export function Matrix({
     <div className="matrix-wrap">
       <div className="axis axis-y" aria-hidden="true">
         <span className="arrow">↑</span>
-        <span className="axis-title">Importance</span>
+        <span className="axis-title">
+          {locale === "zh" ? translations.zh.importance : "Importance"}
+        </span>
         <span className="tick top">{yTicks[0]}</span>
         <span className="tick mid">{yTicks[1]}</span>
         <span className="tick bottom">{yTicks[2]}</span>
@@ -305,6 +427,10 @@ export function Matrix({
 
             {QUAD_ORDER.map(({ quadrant, position }) => {
               const meta = QUADRANTS[quadrant];
+              const qKey = `q${quadrant}Name` as "q1Name" | "q2Name" | "q3Name" | "q4Name";
+              const hKey = `q${quadrant}Hint` as "q1Hint" | "q2Hint" | "q3Hint" | "q4Hint";
+              const qName = locale === "zh" ? translations.zh[qKey] : meta.name;
+              const qHint = locale === "zh" ? translations.zh[hKey] : meta.hint;
               const width =
                 position === "tl" || position === "bl"
                   ? leftLabelWidth
@@ -318,8 +444,8 @@ export function Matrix({
                   style={{ width }}
                   role="button"
                   tabIndex={0}
-                  title={`Open ${meta.name}`}
-                  aria-label={`Open ${meta.name}, ${layout.counts[quadrant]} tasks`}
+                  title={`Open ${qName}`}
+                  aria-label={`Open ${qName}, ${layout.counts[quadrant]} tasks`}
                   onClick={() => onFocusQuadrant(quadrant)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -332,7 +458,7 @@ export function Matrix({
                   <span className="quad-accent" />
                   <div className="quad-copy">
                     <div className="quad-title-row">
-                      <h2>{meta.name}</h2>
+                      <h2>{qName}</h2>
                       <span className="quad-count">
                         {layout.counts[quadrant]}
                       </span>
@@ -340,7 +466,7 @@ export function Matrix({
                         ↗
                       </span>
                     </div>
-                    <p>{meta.hint}</p>
+                    <p>{qHint}</p>
                   </div>
                 </div>
               );
@@ -393,30 +519,53 @@ export function Matrix({
           ))}
 
           {layout.dots.map((dot) => {
-            const sizePx = 9 + (dot.task.urgency / 100) * 5;
             const selected = dot.task.id === selectedId;
+            const due = dot.task.dueDate ? dueState(dot.task.dueDate) : "none";
+            const isSoon = due === "soon" || due === "today";
+            const isOverdue = due === "overdue";
+            const qNum = dot.task.urgency >= threshold ? 3 : 4;
+            const isDraggingThis = dragState?.task.id === dot.task.id;
+            const offsetX = isDraggingThis && dragState.hasBrokenDeadband ? dragState.currentPointer.x - dragState.startPointer.x : 0;
+            const offsetY = isDraggingThis && dragState.hasBrokenDeadband ? dragState.currentPointer.y - dragState.startPointer.y : 0;
+
             return (
               <button
                 key={dot.task.id}
-                className={`dot-hit q${dot.task.urgency >= threshold ? 3 : 4}${
-                  selected ? " selected" : ""
-                }`}
-                style={{ left: dot.rect.left, top: dot.rect.top }}
+                className={`micro-pill q${qNum}${selected ? " selected" : ""}${isSoon ? " temp-warm" : ""}${isOverdue ? " temp-critical" : ""}${isDraggingThis && dragState.isActivated ? " dragging-activated" : ""}`}
+                style={{
+                  left: dot.rect.left + offsetX,
+                  top: dot.rect.top + offsetY,
+                  zIndex: isDraggingThis ? 9999 : 15
+                }}
                 data-task-id={dot.task.id}
-                onClick={() => onSelect(dot.task)}
+                onClick={() => {
+                  if (dragState?.hasBrokenDeadband) return;
+                  onSelect(dot.task);
+                }}
+                onPointerDown={(event) => handleStartDrag(event, dot.task, dot.rect)}
                 onKeyDown={(event) => handleNudge(event, dot.task)}
                 onMouseEnter={(event) => showTaskHover(event, dot.task)}
                 onMouseMove={moveHover}
                 onMouseLeave={() => setHover(null)}
-                aria-label={`${dot.task.title}, importance ${dot.task.importance}, urgency ${dot.task.urgency}, not important`}
+                aria-label={`${dot.task.title}, importance ${dot.task.importance}, urgency ${dot.task.urgency}`}
               >
-                <span
-                  className="micro-dot"
-                  style={{ width: sizePx, height: sizePx }}
-                />
+                <span className="micro-pill-dot" />
+                <span className="micro-pill-text">{dot.task.title}</span>
               </button>
             );
           })}
+
+          {dragState?.isActivated && dragState.hasBrokenDeadband && (
+            <div
+              className="ghost-card-placeholder"
+              style={{
+                left: dragState.originRect.left,
+                top: dragState.originRect.top,
+                width: dragState.originRect.width,
+                height: dragState.originRect.height
+              }}
+            />
+          )}
 
           {layout.cards.map((card) => (
             <TaskCard
@@ -424,6 +573,8 @@ export function Matrix({
               card={card}
               threshold={threshold}
               selected={card.task.id === selectedId}
+              dragState={dragState}
+              onStartDrag={handleStartDrag}
               onSelect={onSelect}
               onComplete={onComplete}
               onKeyDown={handleNudge}
@@ -467,7 +618,9 @@ export function Matrix({
           <span className="tick mid">{xTicks[1]}</span>
           <span className="tick right">{xTicks[2]}</span>
         </div>
-        <span className="axis-title">Urgency →</span>
+        <span className="axis-title">
+          {locale === "zh" ? translations.zh.urgency : "Urgency →"}
+        </span>
       </div>
 
       {hover && (
@@ -493,6 +646,8 @@ function TaskCard({
   card,
   threshold,
   selected,
+  dragState,
+  onStartDrag,
   onSelect,
   onComplete,
   onKeyDown,
@@ -503,6 +658,8 @@ function TaskCard({
   card: CardLayout;
   threshold: number;
   selected: boolean;
+  dragState: DragState | null;
+  onStartDrag: (event: React.PointerEvent, task: Task, rect: Rect) => void;
   onSelect: (task: Task) => void;
   onComplete: (task: Task) => void;
   onKeyDown: (event: ReactKeyboardEvent, task: Task) => void;
@@ -521,30 +678,52 @@ function TaskCard({
         ? "soon"
         : "";
 
+  const isDraggingThis = dragState?.task.id === task.id;
+  const isMoving = isDraggingThis && dragState.hasBrokenDeadband;
+  const isActivated = isDraggingThis && dragState.isActivated;
+  const dx = isMoving ? dragState.currentPointer.x - dragState.startPointer.x : 0;
+  const dy = isMoving ? dragState.currentPointer.y - dragState.startPointer.y : 0;
+
   return (
     <article
       className={`task-card ${qClass} ${tier}${
         kind === "unimportant" ? " unimportant" : ""
-      }${selected ? " selected" : ""}`}
+      }${selected ? " selected" : ""}${isActivated ? " dragging-activated" : ""}${isMoving ? " dragging-moving" : ""}`}
       style={{
-        left: rect.left,
-        top: rect.top,
+        left: rect.left + dx,
+        top: rect.top + dy,
         width: rect.width,
         height: rect.height,
-        zIndex: kind === "pending" ? 60 : 20 + Math.round(task.importance / 2)
+        zIndex: isMoving ? 9999 : kind === "pending" ? 60 : 20 + Math.round(task.importance / 2)
       }}
       tabIndex={0}
       role="button"
       data-task-id={task.id}
       aria-label={`${task.title}, importance ${task.importance}, urgency ${task.urgency}`}
-      onClick={() => onSelect(task)}
+      onClick={() => {
+        if (dragState?.hasBrokenDeadband) return;
+        onSelect(task);
+      }}
+      onPointerDown={(event) => onStartDrag(event, task, rect)}
       onKeyDown={(event) => onKeyDown(event, task)}
       onMouseEnter={(event) => onMouseEnter(event, task)}
       onMouseMove={onMouseMove}
       onMouseLeave={onMouseLeave}
     >
       <div className="card-top">
+        <span
+          className="card-drag-handle"
+          title="Hold or Option-drag to reposition"
+          aria-hidden="true"
+        >
+          ⋮⋮
+        </span>
         <h3>{task.title}</h3>
+        {task.recurrence !== "none" && (
+          <span className="routine-badge" title={`Routine: ${task.recurrence}, streak: ${task.streak}`}>
+            🔥{task.streak > 0 ? task.streak : ""}
+          </span>
+        )}
         <button
           className="complete-btn"
           title="Complete"

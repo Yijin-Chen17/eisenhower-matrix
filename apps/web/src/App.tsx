@@ -9,12 +9,20 @@ import {
   QUADRANTS,
   quadrantOf,
   type KnownQuadrant,
+  type RecurrenceRule,
   type Settings,
   type Tag,
   type Task,
   type TaskView
 } from "@eisenhower/shared";
 import { Matrix } from "./components/Matrix";
+import { DualSpaceMatrix } from "./components/DualSpaceMatrix";
+import {
+  getInitialLocale,
+  saveLocale,
+  translations,
+  type Locale
+} from "./lib/i18n";
 import {
   AddTaskModal,
   ConfirmDialog,
@@ -48,6 +56,15 @@ interface ToastState {
 type AppView = TaskView | "calendar";
 
 export default function App() {
+  const [locale, setLocale] = useState<Locale>(getInitialLocale);
+  const t = translations[locale];
+
+  function toggleLocale() {
+    const next: Locale = locale === "zh" ? "en" : "zh";
+    setLocale(next);
+    saveLocale(next);
+  }
+
   const [view, setView] = useState<AppView>("active");
   const [focusQuadrant, setFocusQuadrant] = useState<KnownQuadrant | null>(null);
   const [focusMode, setFocusMode] = useState<QuadrantViewMode>(() => {
@@ -57,6 +74,17 @@ export default function App() {
         : "list";
     } catch {
       return "list";
+    }
+  });
+  const [canvasMode, setCanvasMode] = useState<"spatial" | "dual-space">(() => {
+    try {
+      return (
+        (window.localStorage.getItem("eisenhower.canvasMode") as
+          | "spatial"
+          | "dual-space") ?? "dual-space"
+      );
+    } catch {
+      return "dual-space";
     }
   });
   const [search, setSearch] = useState("");
@@ -289,6 +317,15 @@ export default function App() {
     }
   }
 
+  function toggleCanvasMode(next: "spatial" | "dual-space") {
+    setCanvasMode(next);
+    try {
+      window.localStorage.setItem("eisenhower.canvasMode", next);
+    } catch {
+      // Ignore storage failures
+    }
+  }
+
   function pushError(error: unknown) {
     showToast(error instanceof Error ? error.message : "Something went wrong");
   }
@@ -420,11 +457,17 @@ export default function App() {
 
   async function handleCreateTask(input: {
     title: string;
+    importance?: number;
+    urgency?: number;
     dueDate: string | null;
+    recurrence?: RecurrenceRule;
   }) {
     const task = await createTask.mutateAsync({
       title: input.title,
-      dueDate: input.dueDate
+      importance: input.importance,
+      urgency: input.urgency,
+      dueDate: input.dueDate,
+      recurrence: input.recurrence
     });
     setView("active");
     setFocusQuadrant(null);
@@ -490,8 +533,8 @@ export default function App() {
             <span />
           </div>
           <div>
-            <h1>Eisenhower Matrix</h1>
-            <p>Local priority board</p>
+            <h1>{t.appTitle}</h1>
+            <p>{t.appSubtitle}</p>
           </div>
         </div>
 
@@ -512,7 +555,7 @@ export default function App() {
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search tasks…"
+            placeholder={t.searchPlaceholder}
             aria-label="Search tasks"
           />
         </label>
@@ -524,7 +567,7 @@ export default function App() {
             aria-selected={view === "active"}
             onClick={() => changeView("active")}
           >
-            In progress <span className="count">{counts.active}</span>
+            {t.inProgress} <span className="count">{counts.active}</span>
           </button>
           <button
             className={`tab${view === "calendar" ? " active" : ""}`}
@@ -532,7 +575,7 @@ export default function App() {
             aria-selected={view === "calendar"}
             onClick={() => changeView("calendar")}
           >
-            Calendar
+            {t.calendar}
           </button>
           <button
             className={`tab${view === "completed" ? " active" : ""}`}
@@ -540,7 +583,7 @@ export default function App() {
             aria-selected={view === "completed"}
             onClick={() => changeView("completed")}
           >
-            Completed <span className="count">{counts.completed}</span>
+            {t.completed} <span className="count">{counts.completed}</span>
           </button>
           <button
             className={`tab${view === "archived" ? " active" : ""}`}
@@ -548,7 +591,7 @@ export default function App() {
             aria-selected={view === "archived"}
             onClick={() => changeView("archived")}
           >
-            Archived <span className="count">{counts.archived}</span>
+            {t.archived} <span className="count">{counts.archived}</span>
           </button>
         </div>
 
@@ -568,12 +611,16 @@ export default function App() {
                 );
               }}
             >
-              <option value="">All quadrants</option>
-              {([1, 2, 3, 4] as const).map((quadrant) => (
-                <option key={quadrant} value={quadrant}>
-                  {QUADRANTS[quadrant].name} · {quadrantCounts[quadrant]}
-                </option>
-              ))}
+              <option value="">{t.allQuadrants}</option>
+              {([1, 2, 3, 4] as const).map((quadrant) => {
+                const qKey = `q${quadrant}Name` as "q1Name" | "q2Name" | "q3Name" | "q4Name";
+                const qName = locale === "zh" ? translations.zh[qKey] : QUADRANTS[quadrant].name;
+                return (
+                  <option key={quadrant} value={quadrant}>
+                    {qName} · {quadrantCounts[quadrant]}
+                  </option>
+                );
+              })}
             </select>
             <svg
               viewBox="0 0 16 16"
@@ -594,12 +641,19 @@ export default function App() {
         )}
 
         <button className="add-btn" onClick={() => setAddOpen(true)}>
-          + Add task
+          {t.addTask}
+        </button>
+        <button
+          className="lang-switch-btn"
+          title="Switch Language / 切换语言"
+          onClick={toggleLocale}
+        >
+          {locale === "zh" ? "EN" : "中文"}
         </button>
         <button
           className="icon-btn"
-          title="Settings"
-          aria-label="Settings"
+          title={t.settings}
+          aria-label={t.settings}
           onClick={() => setSettingsOpen(true)}
         >
           <svg
@@ -622,7 +676,7 @@ export default function App() {
       <div className="filterbar">
         {tags.length > 0 ? (
           <>
-            <span className="filter-label">Tags</span>
+            <span className="filter-label">{t.tags}</span>
             {tags.map((tag) => {
               const active = selectedTagIds.includes(tag.id);
               return (
@@ -640,18 +694,36 @@ export default function App() {
           </>
         ) : (
           <span className="filter-empty">
-            No tags yet — add them from a task.
+            {t.noTagsYet}
           </span>
         )}
         {pendingCount > 0 && (
           <span className="pending-pill">
-            Pending review {pendingCount}
+            {t.pendingReview} {pendingCount}
           </span>
         )}
         <span className="filter-spacer" />
+        {view === "active" && focusQuadrant === null && (
+          <div className="canvas-mode-toggle" role="group" aria-label="Layout view mode">
+            <button
+              className={`mode-pill${canvasMode === "dual-space" ? " active" : ""}`}
+              onClick={() => toggleCanvasMode("dual-space")}
+              title="Dual-Space (Top: Q1/Q2 Canvas, Bottom: Action Tray)"
+            >
+              {t.dualSpaceView}
+            </button>
+            <button
+              className={`mode-pill${canvasMode === "spatial" ? " active" : ""}`}
+              onClick={() => toggleCanvasMode("spatial")}
+              title="Spatial 2D Matrix (Full 4 Quadrants with Micro-Pills)"
+            >
+              {t.spatialView}
+            </button>
+          </div>
+        )}
         {isFiltering && (
           <button className="clear-filter" onClick={clearFilters}>
-            Clear filters
+            {t.clearFilters}
           </button>
         )}
       </div>
@@ -661,18 +733,35 @@ export default function App() {
       >
         {view === "active" ? (
           focusQuadrant === null ? (
-            <Matrix
-              tasks={filteredTasks}
-              threshold={settings.threshold}
-              selectedId={selectedId}
-              forceIndividual={isFiltering}
-              onSelect={handleSelect}
-              onComplete={handleComplete}
-              onNudge={handleNudge}
-              onFocusQuadrant={changeFocus}
-              emptyMessage={emptyMessage}
-              emptyHint={emptyHint}
-            />
+            canvasMode === "dual-space" ? (
+              <DualSpaceMatrix
+                tasks={filteredTasks}
+                threshold={settings.threshold}
+                selectedId={selectedId}
+                forceIndividual={isFiltering}
+                locale={locale}
+                onSelect={handleSelect}
+                onComplete={handleComplete}
+                onNudge={handleNudge}
+                onFocusQuadrant={changeFocus}
+                emptyMessage={emptyMessage}
+                emptyHint={emptyHint}
+              />
+            ) : (
+              <Matrix
+                tasks={filteredTasks}
+                threshold={settings.threshold}
+                selectedId={selectedId}
+                forceIndividual={isFiltering}
+                locale={locale}
+                onSelect={handleSelect}
+                onComplete={handleComplete}
+                onNudge={handleNudge}
+                onFocusQuadrant={changeFocus}
+                emptyMessage={emptyMessage}
+                emptyHint={emptyHint}
+              />
+            )
           ) : (
             <QuadrantFocus
               quadrant={focusQuadrant}
@@ -693,6 +782,7 @@ export default function App() {
             tasks={filteredTasks}
             threshold={settings.threshold}
             selectedId={selectedId}
+            locale={locale}
             onSelect={handleSelect}
             onError={pushError}
           />
@@ -718,6 +808,7 @@ export default function App() {
               tags={tags}
               threshold={settings.threshold}
               conflicts={conflictTitles}
+              locale={locale}
               onClose={() => setSelectedId(null)}
               onPreview={(patch) => handlePreview(selectedTask.id, patch)}
               onSave={(patch) => handleSave(selectedTask.id, patch)}
@@ -732,6 +823,7 @@ export default function App() {
 
       {addOpen && (
         <AddTaskModal
+          locale={locale}
           onClose={() => setAddOpen(false)}
           onCreate={handleCreateTask}
         />

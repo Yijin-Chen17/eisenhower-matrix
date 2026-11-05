@@ -3,9 +3,11 @@ import type {
   CalendarSubscription,
   CreateCalendarSubscriptionInput,
   ImportCalendarInput,
+  RecurrenceRule,
   Settings,
   Tag,
   Task,
+  TaskChecklistItem,
   TaskStatus,
   TaskView
 } from "@eisenhower/shared";
@@ -53,6 +55,9 @@ export interface CreateTaskInput {
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
   tagIds?: string[];
+  recurrence?: RecurrenceRule;
+  firstAction?: string | null;
+  checklists?: TaskChecklistItem[];
 }
 
 export interface UpdateTaskInput {
@@ -66,6 +71,9 @@ export interface UpdateTaskInput {
   tagIds?: string[];
   status?: TaskStatus;
   archived?: boolean;
+  recurrence?: RecurrenceRule;
+  firstAction?: string | null;
+  checklists?: TaskChecklistItem[];
 }
 
 export interface ApiClient {

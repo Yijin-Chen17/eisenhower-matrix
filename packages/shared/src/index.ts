@@ -5,6 +5,28 @@ export * from "./calendar";
 export const TASK_STATUSES = ["active", "completed"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
+export const RECURRENCE_RULES = [
+  "none",
+  "daily",
+  "weekdays",
+  "weekly",
+  "monthly"
+] as const;
+export type RecurrenceRule = (typeof RECURRENCE_RULES)[number];
+
+export interface TaskChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+export const IMPORTANCE_TIERS = {
+  vital: 85,
+  support: 60,
+  minor: 25
+} as const;
+export type ImportanceTierKey = keyof typeof IMPORTANCE_TIERS;
+
 export const TASK_VIEWS = ["active", "completed", "archived"] as const;
 export type TaskView = (typeof TASK_VIEWS)[number];
 
@@ -35,6 +57,11 @@ export interface Task {
   status: TaskStatus;
   completedAt: string | null;
   archivedAt: string | null;
+  recurrence: RecurrenceRule;
+  streak: number;
+  lastCompletedAt: string | null;
+  firstAction: string | null;
+  checklists: TaskChecklistItem[];
   createdAt: string;
   updatedAt: string;
   tags: Tag[];
@@ -122,6 +149,14 @@ export const scoreSchema = z.number().finite().transform(clampScore);
 
 export const tagIdsSchema = z.array(z.string().min(1)).max(50);
 
+export const checklistItemSchema = z.object({
+  id: z.string().min(1),
+  text: z.string().trim().min(1).max(200),
+  done: z.boolean()
+});
+
+export const recurrenceSchema = z.enum(RECURRENCE_RULES);
+
 export const createTaskSchema = z
   .object({
     title: z.string().trim().min(1).max(200),
@@ -131,7 +166,10 @@ export const createTaskSchema = z
     dueDate: dateSchema.nullable().optional(),
     scheduledStart: dateTimeSchema.nullable().optional(),
     scheduledEnd: dateTimeSchema.nullable().optional(),
-    tagIds: tagIdsSchema.optional()
+    tagIds: tagIdsSchema.optional(),
+    recurrence: recurrenceSchema.optional(),
+    firstAction: z.string().trim().max(200).nullable().optional(),
+    checklists: z.array(checklistItemSchema).max(50).optional()
   })
   .refine(validSchedule, "End time must be after start time");
 
@@ -146,7 +184,10 @@ export const updateTaskSchema = z
     scheduledEnd: dateTimeSchema.nullable().optional(),
     tagIds: tagIdsSchema.optional(),
     status: z.enum(TASK_STATUSES).optional(),
-    archived: z.boolean().optional()
+    archived: z.boolean().optional(),
+    recurrence: recurrenceSchema.optional(),
+    firstAction: z.string().trim().max(200).nullable().optional(),
+    checklists: z.array(checklistItemSchema).max(50).optional()
   })
   .refine(validSchedule, "End time must be after start time");
 
@@ -231,4 +272,40 @@ export function dueLabel(dueDate: string | null, today: Date = new Date()): stri
   if (diff === 0) return "Today";
   if (diff <= 3) return `${diff}d left`;
   return dueDate.slice(5).replace("-", "/");
+}
+
+export function calculateUrgencyFromDueDate(
+  dueDate: string | null,
+  today: Date = new Date()
+): number {
+  if (!dueDate) return 50;
+  const diff = daysBetween(toDateKey(today), dueDate);
+  if (diff < 0) return 95;
+  if (diff === 0) return 90;
+  if (diff === 1) return 80;
+  if (diff <= 3) return 70;
+  if (diff <= 7) return 55;
+  if (diff <= 14) return 40;
+  return 25;
+}
+
+export function nextDueDateForRecurrence(
+  currentDueDate: string | null,
+  recurrence: RecurrenceRule,
+  today: Date = new Date()
+): string {
+  const base = currentDueDate ? new Date(`${currentDueDate}T00:00:00Z`) : today;
+  const next = new Date(base.getTime());
+  if (recurrence === "daily") {
+    next.setUTCDate(next.getUTCDate() + 1);
+  } else if (recurrence === "weekdays") {
+    do {
+      next.setUTCDate(next.getUTCDate() + 1);
+    } while (next.getUTCDay() === 0 || next.getUTCDay() === 6);
+  } else if (recurrence === "weekly") {
+    next.setUTCDate(next.getUTCDate() + 7);
+  } else if (recurrence === "monthly") {
+    next.setUTCMonth(next.getUTCMonth() + 1);
+  }
+  return toDateKey(next);
 }

@@ -1,29 +1,90 @@
 import { useEffect, useRef, useState } from "react";
-import type { Settings, Tag, Theme } from "@eisenhower/shared";
+import {
+  IMPORTANCE_TIERS,
+  calculateUrgencyFromDueDate,
+  dueLabel,
+  dueState,
+  toDateKey,
+  type ImportanceTierKey,
+  type RecurrenceRule,
+  type Settings,
+  type Tag,
+  type Theme
+} from "@eisenhower/shared";
 import { DateInput } from "./DateInput";
+import { translations, type Locale } from "../lib/i18n";
 
 interface AddTaskModalProps {
+  locale?: Locale;
   onClose: () => void;
-  onCreate: (input: { title: string; dueDate: string | null }) => Promise<void>;
+  onCreate: (input: {
+    title: string;
+    importance?: number;
+    urgency?: number;
+    dueDate: string | null;
+    recurrence?: RecurrenceRule;
+  }) => Promise<void>;
 }
 
-export function AddTaskModal({ onClose, onCreate }: AddTaskModalProps) {
+function getQuickDate(key: "today" | "tomorrow" | "weekend" | "nextWeek"): string {
+  const now = new Date();
+  if (key === "today") return toDateKey(now);
+  if (key === "tomorrow") {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    return toDateKey(d);
+  }
+  if (key === "weekend") {
+    const d = new Date(now);
+    const day = d.getDay();
+    const diff = (6 - day + 7) % 7 || 7;
+    d.setDate(d.getDate() + diff);
+    return toDateKey(d);
+  }
+  if (key === "nextWeek") {
+    const d = new Date(now);
+    const day = d.getDay();
+    const diff = ((1 - day + 7) % 7) || 7;
+    d.setDate(d.getDate() + diff);
+    return toDateKey(d);
+  }
+  return toDateKey(now);
+}
+
+export function AddTaskModal({ locale = "zh", onClose, onCreate }: AddTaskModalProps) {
+  const t = translations[locale];
   const [title, setTitle] = useState("");
-  const [dueDate, setDueDate] = useState("");
+  const [hasDue, setHasDue] = useState(true);
+  const [importanceTier, setImportanceTier] = useState<ImportanceTierKey>("support");
+  const [urgencyTier, setUrgencyTier] = useState<"urgent" | "soon" | "later">("soon");
+  const [dueDate, setDueDate] = useState<string>(() => toDateKey(new Date()));
+  const [recurrence, setRecurrence] = useState<RecurrenceRule>("none");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const calculatedUrgency = hasDue && dueDate ? calculateUrgencyFromDueDate(dueDate) : null;
+  const effectiveUrgency = calculatedUrgency ?? (
+    urgencyTier === "urgent" ? 85 : urgencyTier === "soon" ? 60 : 30
+  );
+  const effectiveImportance = IMPORTANCE_TIERS[importanceTier];
 
   const submit = async () => {
     const next = title.trim();
     if (!next) {
-      setError("Give the task a title first.");
+      setError(locale === "zh" ? "请先输入任务名称。" : "Give the task a title first.");
       return;
     }
 
     setSaving(true);
     setError("");
     try {
-      await onCreate({ title: next, dueDate: dueDate || null });
+      await onCreate({
+        title: next,
+        importance: effectiveImportance,
+        urgency: effectiveUrgency,
+        dueDate: hasDue && dueDate ? dueDate : null,
+        recurrence
+      });
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create task");
@@ -39,22 +100,19 @@ export function AddTaskModal({ onClose, onCreate }: AddTaskModalProps) {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="modal" role="dialog" aria-modal="true" aria-label="Add task">
+      <div className="modal wide" role="dialog" aria-modal="true" aria-label={t.addTaskTitle}>
         <div className="modal-header">
           <div>
-            <h2>Add task</h2>
-            <p>
-              New tasks start at 50 / 50. If the threshold is 50, they wait in
-              Pending review until you rate them.
-            </p>
+            <h2>{t.addTaskTitle}</h2>
+            <p>{t.addTaskSubtitle}</p>
           </div>
-          <button className="drawer-close" onClick={onClose} aria-label="Close">
+          <button className="drawer-close" onClick={onClose} aria-label={t.cancel}>
             ×
           </button>
         </div>
 
         <div className="field">
-          <label htmlFor="add-title">Title</label>
+          <label htmlFor="add-title">{t.titleLabel}</label>
           <input
             id="add-title"
             className="text-input"
@@ -66,33 +124,200 @@ export function AddTaskModal({ onClose, onCreate }: AddTaskModalProps) {
                 void submit();
               }
             }}
-            placeholder="What needs doing?"
+            placeholder={t.titlePlaceholder}
             autoFocus
             maxLength={200}
           />
         </div>
 
         <div className="field">
-          <label htmlFor="add-due">Due date</label>
-          <DateInput
-            id="add-due"
-            value={dueDate}
-            onChange={(next) => setDueDate(next ?? "")}
-          />
+          <label>{t.importanceLevel}</label>
+          <div className="tier-pills" role="radiogroup" aria-label="Importance tier">
+            <button
+              type="button"
+              className={`tier-pill vital${importanceTier === "vital" ? " active" : ""}`}
+              onClick={() => setImportanceTier("vital")}
+              role="radio"
+              aria-checked={importanceTier === "vital"}
+            >
+              <span className="tier-pill-icon">⭐</span>
+              <span className="tier-pill-label">{t.vital}</span>
+              <span className="tier-pill-score">85</span>
+            </button>
+            <button
+              type="button"
+              className={`tier-pill support${importanceTier === "support" ? " active" : ""}`}
+              onClick={() => setImportanceTier("support")}
+              role="radio"
+              aria-checked={importanceTier === "support"}
+            >
+              <span className="tier-pill-icon">💼</span>
+              <span className="tier-pill-label">{t.support}</span>
+              <span className="tier-pill-score">60</span>
+            </button>
+            <button
+              type="button"
+              className={`tier-pill minor${importanceTier === "minor" ? " active" : ""}`}
+              onClick={() => setImportanceTier("minor")}
+              role="radio"
+              aria-checked={importanceTier === "minor"}
+            >
+              <span className="tier-pill-icon">📎</span>
+              <span className="tier-pill-label">{t.minor}</span>
+              <span className="tier-pill-score">25</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 关键改进：先让用户明确选择有无截止时间，消除认知模糊 */}
+        <div className="field">
+          <label>{t.deadlineBranch}</label>
+          <div className="deadline-branch-selector" role="radiogroup">
+            <button
+              type="button"
+              className={`branch-pill${hasDue ? " active" : ""}`}
+              onClick={() => {
+                setHasDue(true);
+                if (!dueDate) setDueDate(toDateKey(new Date()));
+              }}
+              role="radio"
+              aria-checked={hasDue}
+            >
+              {t.hasDeadline}
+            </button>
+            <button
+              type="button"
+              className={`branch-pill${!hasDue ? " active" : ""}`}
+              onClick={() => {
+                setHasDue(false);
+              }}
+              role="radio"
+              aria-checked={!hasDue}
+            >
+              {t.noDeadline}
+            </button>
+          </div>
+
+          {hasDue ? (
+            <div className="branch-content-box">
+              <div className="quick-dates-row">
+                <button
+                  type="button"
+                  className={`quick-date-btn${dueDate === getQuickDate("today") ? " active" : ""}`}
+                  onClick={() => setDueDate(getQuickDate("today"))}
+                >
+                  {t.quickDates.today}
+                </button>
+                <button
+                  type="button"
+                  className={`quick-date-btn${dueDate === getQuickDate("tomorrow") ? " active" : ""}`}
+                  onClick={() => setDueDate(getQuickDate("tomorrow"))}
+                >
+                  {t.quickDates.tomorrow}
+                </button>
+                <button
+                  type="button"
+                  className={`quick-date-btn${dueDate === getQuickDate("weekend") ? " active" : ""}`}
+                  onClick={() => setDueDate(getQuickDate("weekend"))}
+                >
+                  {t.quickDates.weekend}
+                </button>
+                <button
+                  type="button"
+                  className={`quick-date-btn${dueDate === getQuickDate("nextWeek") ? " active" : ""}`}
+                  onClick={() => setDueDate(getQuickDate("nextWeek"))}
+                >
+                  {t.quickDates.nextWeek}
+                </button>
+              </div>
+              <DateInput
+                id="add-due"
+                value={dueDate}
+                onChange={(next) => setDueDate(next ?? "")}
+              />
+              {calculatedUrgency !== null && (
+                <div className="auto-urgency-card">
+                  <span>💡 {t.autoUrgencyNotice}:</span>
+                  <strong>{calculatedUrgency}分</strong>
+                  <span>({dueLabel(dueDate)})</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="branch-content-box">
+              <label style={{ marginBottom: 6, display: "block", fontSize: "11px", color: "var(--text-muted)" }}>
+                {t.urgencyTendencyLabel}
+              </label>
+              <div className="tier-pills" role="radiogroup" aria-label="Urgency tendency">
+                <button
+                  type="button"
+                  className={`tier-pill urgent${urgencyTier === "urgent" ? " active" : ""}`}
+                  onClick={() => setUrgencyTier("urgent")}
+                  role="radio"
+                  aria-checked={urgencyTier === "urgent"}
+                >
+                  <span className="tier-pill-icon">🔥</span>
+                  <span className="tier-pill-label">{t.urgencyPills.urgent}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`tier-pill soon${urgencyTier === "soon" ? " active" : ""}`}
+                  onClick={() => setUrgencyTier("soon")}
+                  role="radio"
+                  aria-checked={urgencyTier === "soon"}
+                >
+                  <span className="tier-pill-icon">⏱️</span>
+                  <span className="tier-pill-label">{t.urgencyPills.soon}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`tier-pill later${urgencyTier === "later" ? " active" : ""}`}
+                  onClick={() => setUrgencyTier("later")}
+                  role="radio"
+                  aria-checked={urgencyTier === "later"}
+                >
+                  <span className="tier-pill-icon">☕</span>
+                  <span className="tier-pill-label">{t.urgencyPills.later}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="field">
+          <label>{t.routineCadence}</label>
+          <div className="recurrence-pills">
+            {(["none", "daily", "weekdays", "weekly"] as const).map((rule) => (
+              <button
+                key={rule}
+                type="button"
+                className={`rec-pill${recurrence === rule ? " active" : ""}`}
+                onClick={() => setRecurrence(rule)}
+              >
+                {rule === "none"
+                  ? t.oneOff
+                  : rule === "daily"
+                    ? t.daily
+                    : rule === "weekdays"
+                      ? t.weekdays
+                      : t.weekly}
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && <p className="hint form-error">{error}</p>}
 
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </button>
           <button
             className="btn primary"
             onClick={() => void submit()}
             disabled={saving}
           >
-            {saving ? "Adding…" : "Add task"}
+            {saving ? t.adding : t.confirmAdd}
           </button>
         </div>
       </div>

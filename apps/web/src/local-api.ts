@@ -8,6 +8,7 @@ import {
   createTaskSchema,
   importCalendarSchema,
   isValidCalendarIcs,
+  nextDueDateForRecurrence,
   normalizeCalendarUrl,
   parseCalendarEvents,
   settingsPatchSchema,
@@ -18,6 +19,7 @@ import {
   type CalendarSubscription,
   type CreateCalendarSubscriptionInput,
   type ImportCalendarInput,
+  type RecurrenceRule,
   type Settings,
   type Tag,
   type Task,
@@ -115,6 +117,11 @@ function toTask(stored: StoredTask, tags: Tag[]): Task {
     ...task,
     scheduledStart: task.scheduledStart ?? null,
     scheduledEnd: task.scheduledEnd ?? null,
+    recurrence: task.recurrence ?? "none",
+    streak: task.streak ?? 0,
+    lastCompletedAt: task.lastCompletedAt ?? null,
+    firstAction: task.firstAction ?? null,
+    checklists: Array.isArray(task.checklists) ? task.checklists : [],
     tags: tagIds
       .map((id) => byId.get(id))
       .filter((tag): tag is Tag => Boolean(tag))
@@ -202,6 +209,11 @@ export const localApi: ApiClient = {
       status: "active",
       completedAt: null,
       archivedAt: null,
+      recurrence: parsed.data.recurrence ?? "none",
+      streak: 0,
+      lastCompletedAt: null,
+      firstAction: parsed.data.firstAction ?? null,
+      checklists: parsed.data.checklists ?? [],
       createdAt: now,
       updatedAt: now,
       tagIds: resolveTagIds(parsed.data.tagIds, store.tags)
@@ -236,11 +248,30 @@ export const localApi: ApiClient = {
     if (patch.scheduledEnd !== undefined) {
       task.scheduledEnd = patch.scheduledEnd;
     }
+    if (patch.recurrence !== undefined) {
+      task.recurrence = patch.recurrence;
+    }
+    if (patch.firstAction !== undefined) {
+      task.firstAction = patch.firstAction;
+    }
+    if (patch.checklists !== undefined) {
+      task.checklists = patch.checklists;
+    }
 
     if (patch.status !== undefined) {
-      task.status = patch.status;
-      task.completedAt =
-        patch.status === "completed" ? task.completedAt ?? now : null;
+      const isRecurring = (patch.recurrence ?? task.recurrence) !== "none";
+      if (patch.status === "completed" && isRecurring) {
+        const rec = (patch.recurrence ?? task.recurrence) as RecurrenceRule;
+        task.streak = (task.streak ?? 0) + 1;
+        task.lastCompletedAt = now;
+        task.completedAt = now;
+        task.dueDate = nextDueDateForRecurrence(task.dueDate, rec);
+        task.status = "active";
+      } else {
+        task.status = patch.status;
+        task.completedAt =
+          patch.status === "completed" ? task.completedAt ?? now : null;
+      }
     }
 
     if (patch.archived !== undefined) {

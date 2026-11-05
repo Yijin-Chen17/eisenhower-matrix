@@ -137,7 +137,7 @@ function scoreToPoint(
   };
 }
 
-function pointToScore(point: Point, width: number, height: number) {
+export function pointToScore(point: Point, width: number, height: number) {
   return {
     urgency: Math.min(
       100,
@@ -421,6 +421,20 @@ export function layoutMatrix(input: LayoutInput): MatrixLayout {
     ? unimportantAll.filter((task) => task.id !== selectedId)
     : unimportantAll;
 
+  // 方案 A：时间视差临期物质化 (Temporal Emergence)
+  // 当任务临期 (overdue 或 today) 时，哪怕重要度 < threshold，也自动从点/聚合中物质化升格为独立实体小卡片
+  const materializedTasks: Task[] = [];
+  const unimportantRemaining: Task[] = [];
+
+  for (const task of unimportantPool) {
+    const state = dueState(task.dueDate, today);
+    if (!forceIndividual && (state === "overdue" || state === "today")) {
+      materializedTasks.push(task);
+    } else {
+      unimportantRemaining.push(task);
+    }
+  }
+
   const labelObstacles = labelRects(width, height, threshold);
   const clusterRects: Rect[] = [];
   const dotRects: Rect[] = [];
@@ -490,7 +504,7 @@ export function layoutMatrix(input: LayoutInput): MatrixLayout {
   };
 
   if (!forceIndividual) {
-    const clusterDrafts = buildClusters(unimportantPool, width, height);
+    const clusterDrafts = buildClusters(unimportantRemaining, width, height);
 
     for (const draft of clusterDrafts.filter(
       (cluster) => cluster.tasks.length > 1
@@ -628,6 +642,19 @@ export function layoutMatrix(input: LayoutInput): MatrixLayout {
   for (const task of sortedImportant) {
     const quadrant = quadrantOf(task, threshold);
     placeCard(task, "important", quadrant, tierFor(task), quadrant);
+  }
+
+  if (!forceIndividual && materializedTasks.length > 0) {
+    const sortedMaterialized = [...materializedTasks].sort(
+      (a, b) =>
+        b.urgency - a.urgency ||
+        b.importance - a.importance ||
+        a.id.localeCompare(b.id)
+    );
+    for (const task of sortedMaterialized) {
+      const quadrant = quadrantOf(task, threshold);
+      placeCard(task, "unimportant", quadrant, "sm", quadrant);
+    }
   }
 
   if (forceIndividual) {

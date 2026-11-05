@@ -308,4 +308,41 @@ describe("API", () => {
     expect(deleted.response.status).toBe(200);
     expect((await request("/api/calendar/subscriptions")).body).toEqual([]);
   });
+
+  it("handles recurring routine task progression, streak, and subtasks", async () => {
+    const created = await request(
+      "/api/tasks",
+      json({
+        title: "Daily Workout",
+        importance: 85,
+        urgency: 80,
+        dueDate: "2026-11-05",
+        recurrence: "daily",
+        firstAction: "Put on running shoes",
+        checklists: [{ id: "c1", text: "Warm up", done: false }]
+      })
+    );
+    expect(created.response.status).toBe(201);
+    const task = created.body as Task;
+    expect(task.recurrence).toBe("daily");
+    expect(task.streak).toBe(0);
+    expect(task.firstAction).toBe("Put on running shoes");
+    expect(task.checklists).toHaveLength(1);
+
+    // 完成日常习惯任务：递增 streak，自动推进 dueDate 到下一天，仍保持 active 状态
+    const completed = await request(
+      `/api/tasks/${task.id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "completed" })
+      }
+    );
+    expect(completed.response.status).toBe(200);
+    const updated = completed.body as Task;
+    expect(updated.status).toBe("active");
+    expect(updated.streak).toBe(1);
+    expect(updated.dueDate).toBe("2026-11-06");
+    expect(updated.lastCompletedAt).not.toBeNull();
+  });
 });

@@ -5,12 +5,15 @@ import {
   calendarColorFor,
   clampScore,
   clampThreshold,
+  nextDueDateForRecurrence,
   tagColorFor,
   type CalendarSourceType,
   type CalendarSubscription,
+  type RecurrenceRule,
   type Settings,
   type Tag,
   type Task,
+  type TaskChecklistItem,
   type TaskStatus,
   type TaskView
 } from "@eisenhower/shared";
@@ -33,6 +36,9 @@ export interface CreateTaskInput {
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
   tagIds?: string[];
+  recurrence?: RecurrenceRule;
+  firstAction?: string | null;
+  checklists?: TaskChecklistItem[];
 }
 
 export interface UpdateTaskInput {
@@ -46,6 +52,9 @@ export interface UpdateTaskInput {
   tagIds?: string[];
   status?: TaskStatus;
   archived?: boolean;
+  recurrence?: RecurrenceRule;
+  firstAction?: string | null;
+  checklists?: TaskChecklistItem[];
 }
 
 export interface ListTasksInput {
@@ -56,6 +65,16 @@ export interface ListTasksInput {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function parseChecklists(raw: string | null | undefined): TaskChecklistItem[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function mapTask(row: TaskRow, taskTagsList: Tag[]): Task {
@@ -71,6 +90,11 @@ function mapTask(row: TaskRow, taskTagsList: Tag[]): Task {
     status: row.status as TaskStatus,
     completedAt: row.completedAt,
     archivedAt: row.archivedAt,
+    recurrence: (row.recurrence as RecurrenceRule) || "none",
+    streak: row.streak ?? 0,
+    lastCompletedAt: row.lastCompletedAt ?? null,
+    firstAction: row.firstAction ?? null,
+    checklists: parseChecklists(row.checklists),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     tags: taskTagsList
@@ -176,6 +200,11 @@ export function createTask(db: AppDb, input: CreateTaskInput): Task {
         status: "active",
         completedAt: null,
         archivedAt: null,
+        recurrence: input.recurrence ?? "none",
+        streak: 0,
+        lastCompletedAt: null,
+        firstAction: input.firstAction ?? null,
+        checklists: JSON.stringify(input.checklists ?? []),
         createdAt: now,
         updatedAt: now
       })
@@ -212,11 +241,25 @@ export function updateTask(
     patch.scheduledStart = input.scheduledStart;
   }
   if (input.scheduledEnd !== undefined) patch.scheduledEnd = input.scheduledEnd;
+  if (input.recurrence !== undefined) patch.recurrence = input.recurrence;
+  if (input.firstAction !== undefined) patch.firstAction = input.firstAction;
+  if (input.checklists !== undefined) patch.checklists = JSON.stringify(input.checklists);
 
   if (input.status !== undefined) {
-    patch.status = input.status;
-    patch.completedAt =
-      input.status === "completed" ? existing.completedAt ?? now : null;
+    const isRecurring = (input.recurrence ?? existing.recurrence) !== "none";
+    if (input.status === "completed" && isRecurring) {
+      // 周期性例行习惯任务：完成时不归档离开 active，而是递增 streak 并自动顺延 dueDate 到下一周期
+      const rec = (input.recurrence ?? existing.recurrence) as RecurrenceRule;
+      patch.streak = (existing.streak ?? 0) + 1;
+      patch.lastCompletedAt = now;
+      patch.completedAt = now;
+      patch.dueDate = nextDueDateForRecurrence(existing.dueDate, rec);
+      patch.status = "active";
+    } else {
+      patch.status = input.status;
+      patch.completedAt =
+        input.status === "completed" ? existing.completedAt ?? now : null;
+    }
   }
 
   if (input.archived !== undefined) {

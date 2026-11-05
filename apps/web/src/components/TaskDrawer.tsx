@@ -5,11 +5,14 @@ import {
   dueLabel,
   dueState,
   quadrantOf,
+  type RecurrenceRule,
   type Tag,
-  type Task
+  type Task,
+  type TaskChecklistItem
 } from "@eisenhower/shared";
 import type { UpdateTaskInput } from "../api";
 import { DateInput } from "./DateInput";
+import { translations, type Locale } from "../lib/i18n";
 import {
   addHoursIso,
   combineLocal,
@@ -23,6 +26,7 @@ interface TaskDrawerProps {
   tags: Tag[];
   threshold: number;
   conflicts: string[];
+  locale?: Locale;
   onClose: () => void;
   onPreview: (patch: UpdateTaskInput) => void;
   onSave: (patch: UpdateTaskInput) => void;
@@ -37,6 +41,7 @@ export function TaskDrawer({
   tags,
   threshold,
   conflicts,
+  locale = "zh",
   onClose,
   onPreview,
   onSave,
@@ -45,6 +50,7 @@ export function TaskDrawer({
   onDelete,
   onCreateTag
 }: TaskDrawerProps) {
+  const t = translations[locale];
   const [titleText, setTitleText] = useState(task.title);
   const [impText, setImpText] = useState(String(task.importance));
   const [urgText, setUrgText] = useState(String(task.urgency));
@@ -60,6 +66,9 @@ export function TaskDrawer({
   const [tagName, setTagName] = useState("");
   const [tagError, setTagError] = useState("");
   const [creatingTag, setCreatingTag] = useState(false);
+  const [firstActionText, setFirstActionText] = useState(task.firstAction ?? "");
+  const [newChecklistText, setNewChecklistText] = useState("");
+  const [recurrence, setRecurrence] = useState<RecurrenceRule>(task.recurrence ?? "none");
 
   const pendingRef = useRef<UpdateTaskInput>({});
   const timerRef = useRef<number | null>(null);
@@ -90,13 +99,17 @@ export function TaskDrawer({
       task.scheduledStart ? timeFromIso(task.scheduledStart) : "09:00"
     );
     setEndTime(task.scheduledEnd ? timeFromIso(task.scheduledEnd) : "10:00");
+    setFirstActionText(task.firstAction ?? "");
+    setRecurrence(task.recurrence ?? "none");
   }, [
     task.id,
     task.title,
     task.importance,
     task.urgency,
     task.scheduledStart,
-    task.scheduledEnd
+    task.scheduledEnd,
+    task.firstAction,
+    task.recurrence
   ]);
 
   useEffect(() => {
@@ -181,6 +194,42 @@ export function TaskDrawer({
     } finally {
       setCreatingTag(false);
     }
+  };
+
+  const commitFirstAction = () => {
+    const next = firstActionText.trim();
+    if (next !== (task.firstAction ?? "")) {
+      queue({ firstAction: next || null }, true);
+    }
+  };
+
+  const toggleChecklist = (id: string) => {
+    const next = (task.checklists ?? []).map((item) =>
+      item.id === id ? { ...item, done: !item.done } : item
+    );
+    queue({ checklists: next }, true);
+  };
+
+  const deleteChecklist = (id: string) => {
+    const next = (task.checklists ?? []).filter((item) => item.id !== id);
+    queue({ checklists: next }, true);
+  };
+
+  const addChecklist = () => {
+    const text = newChecklistText.trim();
+    if (!text) return;
+    const newItem: TaskChecklistItem = {
+      id: `chk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      text,
+      done: false
+    };
+    queue({ checklists: [...(task.checklists ?? []), newItem] }, true);
+    setNewChecklistText("");
+  };
+
+  const changeRecurrence = (rule: RecurrenceRule) => {
+    setRecurrence(rule);
+    queue({ recurrence: rule }, true);
   };
 
   const addSchedule = () => {
@@ -297,7 +346,7 @@ export function TaskDrawer({
 
       <div className="detail-section">
         <label htmlFor="drawer-importance">
-          Importance <output>{task.importance}</output>
+          {locale === "zh" ? translations.zh.importance : "Importance"} <output>{task.importance}</output>
         </label>
         <div className="score-row">
           <input
@@ -333,7 +382,7 @@ export function TaskDrawer({
 
       <div className="detail-section">
         <label htmlFor="drawer-urgency">
-          Urgency <output>{task.urgency}</output>
+          {locale === "zh" ? "紧迫度" : "Urgency"} <output>{task.urgency}</output>
         </label>
         <div className="score-row">
           <input
@@ -366,7 +415,7 @@ export function TaskDrawer({
       </div>
 
       <div className="detail-section">
-        <label htmlFor="drawer-due">Due date</label>
+        <label htmlFor="drawer-due">{t.dueDateLabel}</label>
         <DateInput
           id="drawer-due"
           value={task.dueDate}
@@ -375,7 +424,7 @@ export function TaskDrawer({
       </div>
 
       <div className="detail-section">
-        <label>Schedule</label>
+        <label>{t.scheduleLabel}</label>
         {task.scheduledStart ? (
           <div className="schedule-editor">
             <DateInput
@@ -384,7 +433,7 @@ export function TaskDrawer({
               onChange={changeScheduleDate}
             />
             <div className="schedule-times">
-              <label htmlFor="drawer-start">Start</label>
+              <label htmlFor="drawer-start">{t.startLabel}</label>
               <input
                 id="drawer-start"
                 className="time-input"
@@ -392,7 +441,7 @@ export function TaskDrawer({
                 value={startTime}
                 onChange={(event) => changeStartTime(event.target.value)}
               />
-              <label htmlFor="drawer-end">End</label>
+              <label htmlFor="drawer-end">{t.endLabel}</label>
               <input
                 id="drawer-end"
                 className="time-input"
@@ -403,16 +452,16 @@ export function TaskDrawer({
             </div>
             {conflicts.length > 0 && (
               <p className="schedule-conflict">
-                Overlaps: {conflicts.join(", ")}
+                {t.overlapsNotice}: {conflicts.join(", ")}
               </p>
             )}
             <button className="schedule-clear" onClick={clearSchedule}>
-              Clear schedule
+              {t.clearScheduleBtn}
             </button>
           </div>
         ) : (
           <button className="schedule-add" onClick={addSchedule}>
-            + Add time block
+            {t.addScheduleBtn}
           </button>
         )}
       </div>
@@ -445,7 +494,7 @@ export function TaskDrawer({
           ))}
           {!task.tags.length && !otherTags.length && (
             <span className="hint" style={{ marginTop: 0 }}>
-              No tags yet
+              {t.noTagsYet}
             </span>
           )}
         </div>
@@ -460,7 +509,7 @@ export function TaskDrawer({
                 void addTag();
               }
             }}
-            placeholder="New tag…"
+            placeholder={locale === "zh" ? "新建标签…" : "New tag…"}
             maxLength={30}
             aria-label="New tag name"
           />
@@ -469,19 +518,119 @@ export function TaskDrawer({
             onClick={() => void addTag()}
             disabled={creatingTag}
           >
-            {creatingTag ? "Adding…" : "Add"}
+            {creatingTag ? (locale === "zh" ? "添加中…" : "Adding…") : (locale === "zh" ? "添加" : "Add")}
           </button>
         </div>
         {tagError && <p className="hint form-error">{tagError}</p>}
       </div>
 
       <div className="detail-section">
-        <label htmlFor="drawer-notes">Notes</label>
+        <label htmlFor="drawer-first-action">{t.firstActionLabel}</label>
+        <input
+          id="drawer-first-action"
+          className="text-input"
+          value={firstActionText}
+          onChange={(e) => setFirstActionText(e.target.value)}
+          onBlur={commitFirstAction}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitFirstAction();
+              e.currentTarget.blur();
+            }
+          }}
+          placeholder={t.firstActionPlaceholder}
+        />
+        <span className="hint" style={{ marginTop: 4 }}>
+          {t.firstActionHint}
+        </span>
+      </div>
+
+      <div className="detail-section">
+        <label>
+          <span>{t.checklistLabel}</span>
+          {(task.checklists?.length ?? 0) > 0 && (
+            <output>
+              {task.checklists.filter((i) => i.done).length} / {task.checklists.length}
+            </output>
+          )}
+        </label>
+        <div className="checklist-items">
+          {(task.checklists ?? []).map((item) => (
+            <div key={item.id} className={`checklist-row${item.done ? " done" : ""}`}>
+              <button
+                type="button"
+                className="checklist-check-btn"
+                onClick={() => toggleChecklist(item.id)}
+                aria-label={item.done ? "Mark undone" : "Mark done"}
+              >
+                {item.done ? "✓" : ""}
+              </button>
+              <span className="checklist-text">{item.text}</span>
+              <button
+                type="button"
+                className="checklist-del-btn"
+                onClick={() => deleteChecklist(item.id)}
+                aria-label="Delete subtask"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="checklist-add">
+          <input
+            className="text-input"
+            value={newChecklistText}
+            onChange={(e) => setNewChecklistText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addChecklist();
+              }
+            }}
+            placeholder={t.addChecklistPlaceholder}
+          />
+          <button
+            type="button"
+            className="small-btn"
+            onClick={addChecklist}
+            disabled={!newChecklistText.trim()}
+          >
+            {locale === "zh" ? "添加" : "Add"}
+          </button>
+        </div>
+      </div>
+
+      <div className="detail-section">
+        <label>
+          <span>{t.routineCadence}</span>
+          {task.streak > 0 && <output>🔥 {locale === "zh" ? `连续坚持: ${task.streak} 次` : `Streak: ${task.streak}`}</output>}
+        </label>
+        <div className="recurrence-pills">
+          {(["none", "daily", "weekdays", "weekly"] as const).map((rule) => (
+            <button
+              key={rule}
+              type="button"
+              className={`rec-pill${recurrence === rule ? " active" : ""}`}
+              onClick={() => changeRecurrence(rule)}
+            >
+              {rule === "none" ? t.oneOff : rule === "daily" ? t.daily : rule === "weekdays" ? t.weekdays : t.weekly}
+            </button>
+          ))}
+        </div>
+        <span className="hint" style={{ marginTop: 4 }}>
+          {locale === "zh" ? "习惯与周期任务在点击完成时自动推移到下一个周期，不会直接进入归档。" : "Recurring tasks advance due dates on completion rather than leaving active status."}
+        </span>
+      </div>
+
+      <div className="detail-section">
+        <label htmlFor="drawer-notes">{t.notesLabel}</label>
         <textarea
           id="drawer-notes"
           value={task.notes}
           onChange={(event) => queue({ notes: event.target.value })}
-          placeholder="Add context…"
+          placeholder={t.notesPlaceholder}
         />
       </div>
 
@@ -493,7 +642,7 @@ export function TaskDrawer({
             onComplete();
           }}
         >
-          ✓ Complete
+          {t.completeBtn}
         </button>
         <button
           className="btn"
@@ -502,7 +651,7 @@ export function TaskDrawer({
             onArchive();
           }}
         >
-          Archive
+          {t.archiveBtn}
         </button>
         <button
           className="btn danger"
@@ -511,13 +660,14 @@ export function TaskDrawer({
             onDelete();
           }}
         >
-          Delete
+          {t.deleteBtn}
         </button>
       </div>
 
       <p className="hint">
-        Use the sliders or type a number. Arrow keys on a focused card also
-        nudge importance and urgency.
+        {locale === "zh"
+          ? "拖动滑块或直接输入分值。选中任务卡片后亦可直接使用键盘方向键微调重要度与紧迫度。"
+          : "Use the sliders or type a number. Arrow keys on a focused card also nudge importance and urgency."}
       </p>
     </aside>
   );

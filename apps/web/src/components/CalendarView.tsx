@@ -6,13 +6,20 @@ import {
   type CalendarEvent,
   type Task
 } from "@eisenhower/shared";
-import { useCalendarEvents, useCalendars, useRefreshAllCalendars } from "../hooks";
+import {
+  useCalendarEvents,
+  useCalendars,
+  useRefreshAllCalendars,
+  useUpdateTask
+} from "../hooks";
 import {
   CALENDAR_END_HOUR,
   CALENDAR_START_HOUR,
   HOUR_HEIGHT,
   addDays,
+  addHoursIso,
   addWeeks,
+  combineLocal,
   formatHour,
   formatTime,
   localDateKey,
@@ -24,11 +31,13 @@ import {
   type PositionedItem
 } from "../lib/calendar";
 import { CalendarsDialog } from "./CalendarsDialog";
+import { translations, type Locale } from "../lib/i18n";
 
 interface CalendarViewProps {
   tasks: Task[];
   threshold: number;
   selectedId: string | null;
+  locale?: Locale;
   onSelect: (task: Task) => void;
   onError: (message: string) => void;
 }
@@ -118,16 +127,60 @@ export function CalendarView({
   tasks,
   threshold,
   selectedId,
+  locale = "zh",
   onSelect,
   onError
 }: CalendarViewProps) {
+  const t = translations[locale];
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [sideTab, setSideTab] = useState<"due" | "unscheduled">("due");
+  const updateTask = useUpdateTask();
 
   const calendarsQuery = useCalendars();
   const calendars = calendarsQuery.data ?? [];
   const refreshAll = useRefreshAllCalendars();
+
+  const unscheduledTasks = useMemo(() => {
+    return tasks
+      .filter((t) => {
+        if (t.scheduledStart) return false;
+        const q = quadrantOf(t, threshold);
+        return q === 1 || q === 2;
+      })
+      .sort((a, b) => b.importance - a.importance || b.urgency - a.urgency);
+  }, [tasks, threshold]);
+
+  const handleDropOnDayCol = (event: React.DragEvent, dayKey: string) => {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData("text/plain");
+    if (!taskId) return;
+    const colRect = event.currentTarget.getBoundingClientRect();
+    const offsetY = event.clientY - colRect.top;
+    const hoursFraction = offsetY / HOUR_HEIGHT;
+    const targetHour = Math.min(
+      CALENDAR_END_HOUR - 1,
+      Math.max(CALENDAR_START_HOUR, Math.floor(CALENDAR_START_HOUR + hoursFraction))
+    );
+    const hourStr = String(targetHour).padStart(2, "0") + ":00";
+    const startIso = combineLocal(dayKey, hourStr);
+    const endIso = addHoursIso(startIso, 1);
+    updateTask.mutate({
+      id: taskId,
+      patch: { scheduledStart: startIso, scheduledEnd: endIso }
+    });
+  };
+
+  const handleQuickSchedule = (task: Task) => {
+    const today = localDateKey(new Date());
+    const startIso = combineLocal(today, "09:00");
+    const endIso = addHoursIso(startIso, 1);
+    updateTask.mutate({
+      id: task.id,
+      patch: { scheduledStart: startIso, scheduledEnd: endIso }
+    });
+  };
 
   const rangeStart = weekStart.toISOString();
   const rangeEnd = addDays(weekStart, 7).toISOString();
@@ -253,7 +306,7 @@ export function CalendarView({
             className="small-btn"
             onClick={() => setWeekStart(startOfWeek(new Date()))}
           >
-            Today
+            {t.todayBtn}
           </button>
           <button
             className="cal-nav-btn"
@@ -266,16 +319,16 @@ export function CalendarView({
         </div>
 
         <div className="cal-actions">
-          {eventsQuery.isFetching && <span className="cal-sync">Syncing…</span>}
+          {eventsQuery.isFetching && <span className="cal-sync">{t.syncing}</span>}
           <button className="small-btn" onClick={() => setDialogOpen(true)}>
-            Calendars
+            {t.calendarsBtn}
           </button>
           <button
             className="small-btn"
             onClick={() => void refreshNow()}
             disabled={refreshAll.isPending}
           >
-            {refreshAll.isPending ? "Refreshing…" : "Refresh"}
+            {refreshAll.isPending ? (locale === "zh" ? "刷新中…" : "Refreshing…") : t.refreshBtn}
           </button>
         </div>
       </div>
@@ -288,49 +341,109 @@ export function CalendarView({
 
       <div className="cal-body">
         <aside className="cal-due">
-          <div className="cal-due-head">
-            <h3>Due</h3>
-            <span>This week</span>
+          <div className="cal-sidebar-tabs">
+            <button
+              type="button"
+              className={`cal-side-tab${sideTab === "due" ? " active" : ""}`}
+              onClick={() => setSideTab("due")}
+            >
+              {t.dueTab} ({overdue.length + dueGroups.reduce((acc, g) => acc + g.due.length, 0)})
+            </button>
+            <button
+              type="button"
+              className={`cal-side-tab${sideTab === "unscheduled" ? " active" : ""}`}
+              onClick={() => setSideTab("unscheduled")}
+            >
+              {t.unscheduledTab} ({unscheduledTasks.length})
+            </button>
           </div>
+
           <div className="cal-due-body">
-            {overdue.length > 0 && (
-              <div className="cal-due-group overdue">
-                <h4>Overdue</h4>
-                {overdue.map((task) => (
-                  <DueTask
-                    key={task.id}
-                    task={task}
-                    threshold={threshold}
-                    selected={task.id === selectedId}
-                    onSelect={onSelect}
-                  />
-                ))}
-              </div>
-            )}
+            {sideTab === "due" ? (
+              <>
+                {overdue.length > 0 && (
+                  <div className="cal-due-group overdue">
+                    <h4>{locale === "zh" ? "已逾期" : "Overdue"}</h4>
+                    {overdue.map((task) => (
+                      <DueTask
+                        key={task.id}
+                        task={task}
+                        threshold={threshold}
+                        selected={task.id === selectedId}
+                        onSelect={onSelect}
+                      />
+                    ))}
+                  </div>
+                )}
 
-            {dueGroups.map((day) => (
-              <div className="cal-due-group" key={day.key}>
-                <h4>
-                  {day.date.toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric"
-                  })}
-                </h4>
-                {day.due.map((task) => (
-                  <DueTask
-                    key={task.id}
-                    task={task}
-                    threshold={threshold}
-                    selected={task.id === selectedId}
-                    onSelect={onSelect}
-                  />
+                {dueGroups.map((day) => (
+                  <div className="cal-due-group" key={day.key}>
+                    <h4>
+                      {day.date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric"
+                      })}
+                    </h4>
+                    {day.due.map((task) => (
+                      <DueTask
+                        key={task.id}
+                        task={task}
+                        threshold={threshold}
+                        selected={task.id === selectedId}
+                        onSelect={onSelect}
+                      />
+                    ))}
+                  </div>
                 ))}
-              </div>
-            ))}
 
-            {overdue.length === 0 && dueGroups.length === 0 && (
-              <p className="cal-due-empty">No due tasks this week.</p>
+                {overdue.length === 0 && dueGroups.length === 0 && (
+                  <p className="cal-due-empty">{locale === "zh" ? "本周暂无临期任务。" : "No due tasks this week."}</p>
+                )}
+              </>
+            ) : (
+              <div className="cal-unscheduled-list">
+                <p className="hint" style={{ margin: "4px 0 8px" }}>
+                  {t.dragHint}
+                </p>
+                {unscheduledTasks.length === 0 ? (
+                  <p className="cal-due-empty">{t.allScheduledNotice}</p>
+                ) : (
+                  unscheduledTasks.map((task) => {
+                    const q = quadrantOf(task, threshold);
+                    return (
+                      <div
+                        key={task.id}
+                        className={`unscheduled-shelf-card q${q}${task.id === selectedId ? " selected" : ""}`}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("text/plain", task.id);
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onClick={() => onSelect(task)}
+                      >
+                        <div className="shelf-card-title">{task.title}</div>
+                        <div className="shelf-card-actions">
+                          <span className="shelf-card-score">
+                            I {task.importance} · U {task.urgency}
+                          </span>
+                          <button
+                            type="button"
+                            className="shelf-quick-btn"
+                            title={locale === "zh" ? "排入今日 09:00" : "Schedule for today 09:00"}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleQuickSchedule(task);
+                            }}
+                          >
+                            {t.blockTodayBtn}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             )}
           </div>
         </aside>
@@ -399,6 +512,11 @@ export function CalendarView({
                   }`}
                   key={`col-${day.key}`}
                   style={{ height: GRID_HEIGHT }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(e) => handleDropOnDayCol(e, day.key)}
                 >
                   {day.timed.map((positioned) => {
                     const segment = positioned.item;

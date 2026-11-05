@@ -22,6 +22,13 @@ export const tasks = sqliteTable(
       .default("active"),
     completedAt: text("completed_at"),
     archivedAt: text("archived_at"),
+    recurrence: text("recurrence")
+      .notNull()
+      .default("none"),
+    streak: integer("streak").notNull().default(0),
+    lastCompletedAt: text("last_completed_at"),
+    firstAction: text("first_action"),
+    checklists: text("checklists").notNull().default("[]"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },
