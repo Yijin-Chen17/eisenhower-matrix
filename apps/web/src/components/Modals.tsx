@@ -330,6 +330,7 @@ interface SettingsDialogProps {
   settings: Settings;
   tags: Tag[];
   locale?: Locale;
+  onToggleLocale: () => void;
   onClose: () => void;
   onUpdateSettings: (patch: Partial<Settings>) => void;
   onDeleteTag: (tag: Tag) => void;
@@ -365,6 +366,7 @@ export function SettingsDialog({
   settings,
   tags,
   locale = "zh",
+  onToggleLocale,
   onClose,
   onUpdateSettings,
   onDeleteTag
@@ -425,9 +427,40 @@ export function SettingsDialog({
         </div>
 
         <div className="field">
-          <label htmlFor="settings-threshold">
-            {locale === "zh" ? "象限划分阈值" : "Quadrant threshold"} <output>{threshold}</output>
-          </label>
+          <label>{locale === "zh" ? "界面语言" : "Language"}</label>
+          <div className="recurrence-pills" role="radiogroup" aria-label="Language">
+            <button
+              type="button"
+              className={`rec-pill${locale === "zh" ? " active" : ""}`}
+              role="radio"
+              aria-checked={locale === "zh"}
+              onClick={() => {
+                if (locale !== "zh") onToggleLocale();
+              }}
+            >
+              中文
+            </button>
+            <button
+              type="button"
+              className={`rec-pill${locale === "en" ? " active" : ""}`}
+              role="radio"
+              aria-checked={locale === "en"}
+              onClick={() => {
+                if (locale !== "en") onToggleLocale();
+              }}
+            >
+              English
+            </button>
+          </div>
+        </div>
+
+        <div className="field threshold-field">
+          <div className="field-head">
+            <label htmlFor="settings-threshold">
+              {locale === "zh" ? "象限划分阈值" : "Quadrant threshold"}
+            </label>
+            <output htmlFor="settings-threshold">{threshold}</output>
+          </div>
           <input
             id="settings-threshold"
             type="range"

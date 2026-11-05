@@ -276,6 +276,14 @@ export function Matrix({
     });
   }, [layout]);
 
+  /**
+   * Opening the detail drawer covers the card the pointer is still resting on,
+   * so its tooltip would float on top of the panel. Drop it on selection.
+   */
+  useEffect(() => {
+    setHover(null);
+  }, [selectedId]);
+
   function handleComplete(task: Task) {
     setHover(null);
     onComplete(task);
@@ -402,6 +410,19 @@ export function Matrix({
         <span className="tick top">{yTicks[0]}</span>
         <span className="tick mid">{yTicks[1]}</span>
         <span className="tick bottom">{yTicks[2]}</span>
+      </div>
+
+      {/* The urgency axis sits above the canvas so both axis titles frame the
+          matrix from the top-left corner instead of bracketing it. */}
+      <div className="axis axis-x" aria-hidden="true">
+        <span className="axis-title">
+          {locale === "zh" ? translations.zh.urgency : "Urgency →"}
+        </span>
+        <div className="ticks">
+          <span className="tick left">{xTicks[0]}</span>
+          <span className="tick mid">{xTicks[1]}</span>
+          <span className="tick right">{xTicks[2]}</span>
+        </div>
       </div>
 
       <div
@@ -642,17 +663,6 @@ export function Matrix({
             />
           </>
         )}
-      </div>
-
-      <div className="axis axis-x" aria-hidden="true">
-        <div className="ticks">
-          <span className="tick left">{xTicks[0]}</span>
-          <span className="tick mid">{xTicks[1]}</span>
-          <span className="tick right">{xTicks[2]}</span>
-        </div>
-        <span className="axis-title">
-          {locale === "zh" ? translations.zh.urgency : "Urgency →"}
-        </span>
       </div>
 
       {hover && (

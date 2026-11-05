@@ -689,36 +689,6 @@ export default function App() {
 
         <div className="sidebar-foot">
           <button
-            className="nav-item lang-switch-item"
-            title={
-              sidebarCollapsed
-                ? locale === "zh"
-                  ? "切换为英文 (Switch to English)"
-                  : "切换为中文 (Switch to Chinese)"
-                : undefined
-            }
-            aria-label="Toggle language"
-            onClick={toggleLocale}
-          >
-            <span className="nav-icon" aria-hidden="true">
-              <svg
-                viewBox="0 0 24 24"
-                width="16"
-                height="16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                <path d="M2 12h20" />
-              </svg>
-            </span>
-            <span className="nav-label">{locale === "zh" ? "EN" : "中文"}</span>
-          </button>
-          <button
             className="nav-item"
             title={sidebarCollapsed ? t.settings : undefined}
             aria-label={t.settings}
@@ -1021,6 +991,7 @@ export default function App() {
           settings={settings}
           tags={tags}
           locale={locale}
+          onToggleLocale={toggleLocale}
           onClose={() => setSettingsOpen(false)}
           onUpdateSettings={handleUpdateSettings}
           onDeleteTag={handleDeleteTag}

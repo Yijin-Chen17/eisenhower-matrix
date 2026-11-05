@@ -376,6 +376,32 @@ button {
   .is-collapsed .sidebar-toggle {
     display: none;
   }
+
+  /* Without a label the selection has no reason to stay a wide rounded row:
+     collapse it into a square block centred on the rail. */
+  .is-collapsed .sidebar-nav .nav-item,
+  .is-collapsed .sidebar-foot .nav-item {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 10px;
+    margin: 0 auto;
+  }
+
+  .is-collapsed .sidebar-foot .nav-item {
+    flex: 0 0 36px;
+  }
+
+  .is-collapsed .sidebar-foot {
+    justify-content: center;
+  }
+
+  /* Keep the mark on the same centre line as the icon squares below it. */
+  .is-collapsed .sidebar-head {
+    padding: 0 0 10px;
+    justify-content: center;
+  }
 }
 
 /* ---------- top bar ---------- */
@@ -739,15 +765,18 @@ button {
   position: relative;
 }
 
+/* Opening a task must not resize the canvas: the drawer floats above the
+   matrix (see the desktop block near the drawer styles) so quadrant geometry
+   stays put while you edit. */
 .workspace.has-drawer {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .matrix-wrap {
   position: relative;
   min-width: 0;
   min-height: 0;
-  padding: 36px 36px 44px 60px;
+  padding: 54px 36px 20px 60px;
   background: var(--bg);
 }
 
@@ -1061,8 +1090,8 @@ button {
 .axis-y {
   position: absolute;
   left: 10px;
-  top: 36px;
-  bottom: 44px;
+  top: 54px;
+  bottom: 20px;
   width: 42px;
 }
 
@@ -1109,17 +1138,19 @@ button {
   bottom: -3px;
 }
 
+/* Urgency axis lives above the canvas: title row first, tick row hugging the
+   top edge of the matrix. */
 .axis-x {
   position: absolute;
   left: 60px;
   right: 36px;
-  bottom: 6px;
-  height: 32px;
+  top: 4px;
+  height: 40px;
 }
 
 .axis-x .ticks {
   position: absolute;
-  top: 0;
+  bottom: 2px;
   left: 0;
   right: 0;
   height: 12px;
@@ -1146,7 +1177,7 @@ button {
 
 .axis-x .axis-title {
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
   font-size: 11px;
@@ -2300,6 +2331,33 @@ textarea {
   display: none;
 }
 
+/* Desktop: the detail drawer is an overlay, not a column. It slides over the
+   canvas with a soft shadow so opening a task never re-flows the matrix. */
+@media (min-width: 1041px) {
+  .drawer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(380px, 32vw);
+    min-width: 340px;
+    z-index: 60;
+    box-shadow: -28px 0 70px var(--popover-shadow);
+    animation: drawer-slide-in 0.18s ease-out;
+  }
+}
+
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(28px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 /* ---------- lists ---------- */
 .list-view {
   min-height: 0;
@@ -2491,6 +2549,45 @@ textarea {
 .field > label output {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* Threshold control: label and value share one row, the slider spans the full
+   field width and the 30/50/70 ticks are inset to sit under the thumb range. */
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.field-head label {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.field-head output {
+  min-width: 32px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.threshold-field input[type="range"] {
+  display: block;
+  width: 100%;
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+.threshold-field .range-labels {
+  padding: 0 7px;
 }
 
 .modal-actions {
@@ -3453,7 +3550,7 @@ textarea {
   }
 
   .matrix-wrap {
-    padding: 36px 18px 44px 42px;
+    padding: 54px 18px 18px 42px;
   }
 
   .quadrant-focus {
@@ -3476,6 +3573,10 @@ textarea {
   .axis-x {
     left: 42px;
     right: 18px;
+  }
+
+  .axis-y {
+    bottom: 18px;
   }
 
   .drawer {
