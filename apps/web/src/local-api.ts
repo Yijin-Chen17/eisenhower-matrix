@@ -10,6 +10,7 @@ import {
   isValidCalendarIcs,
   nextDueDateForRecurrence,
   normalizeCalendarUrl,
+  normalizeTheme,
   parseCalendarEvents,
   settingsPatchSchema,
   tagColorFor,
@@ -86,7 +87,7 @@ function readStore(): Store {
         threshold: clampThreshold(
           parsed.settings?.threshold ?? DEFAULT_SETTINGS.threshold
         ),
-        theme: parsed.settings?.theme === "fog" ? "fog" : "graphite"
+        theme: normalizeTheme(parsed.settings?.theme)
       },
       calendars: Array.isArray(parsed.calendars) ? parsed.calendars : []
     };

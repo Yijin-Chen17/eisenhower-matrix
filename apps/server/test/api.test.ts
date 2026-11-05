@@ -167,18 +167,18 @@ describe("API", () => {
   it("reads and updates settings", async () => {
     const initial = await request("/api/settings");
     expect(initial.response.status).toBe(200);
-    expect(initial.body).toEqual({ threshold: 50, theme: "graphite" });
+    expect(initial.body).toEqual({ threshold: 50, theme: "system" });
 
     const updated = await request("/api/settings", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ threshold: 40, theme: "fog" })
+      body: JSON.stringify({ threshold: 40, theme: "light" })
     });
     expect(updated.response.status).toBe(200);
-    expect(updated.body).toEqual({ threshold: 40, theme: "fog" });
+    expect(updated.body).toEqual({ threshold: 40, theme: "light" });
 
     const read = await request("/api/settings");
-    expect(read.body as Settings).toEqual({ threshold: 40, theme: "fog" });
+    expect(read.body as Settings).toEqual({ threshold: 40, theme: "light" });
   });
 
   it("rejects out-of-range settings", async () => {

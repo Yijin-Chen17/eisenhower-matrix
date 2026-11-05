@@ -30,8 +30,22 @@ export type ImportanceTierKey = keyof typeof IMPORTANCE_TIERS;
 export const TASK_VIEWS = ["active", "completed", "archived"] as const;
 export type TaskView = (typeof TASK_VIEWS)[number];
 
-export const THEMES = ["graphite", "fog"] as const;
+export const THEMES = ["light", "dark", "system"] as const;
 export type Theme = (typeof THEMES)[number];
+
+export const RESOLVED_THEMES = ["light", "dark"] as const;
+export type ResolvedTheme = (typeof RESOLVED_THEMES)[number];
+
+/**
+ * Accept the current theme ids plus the legacy `graphite` / `fog` names and
+ * fall back to following the system when a value is unknown.
+ */
+export function normalizeTheme(value: unknown): Theme {
+  if (value === "light" || value === "dark" || value === "system") return value;
+  if (value === "graphite") return "dark";
+  if (value === "fog") return "light";
+  return "system";
+}
 
 export const SCORE_MIN = 0;
 export const SCORE_MAX = 100;
@@ -74,7 +88,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   threshold: THRESHOLD_DEFAULT,
-  theme: "graphite"
+  theme: "system"
 };
 
 export const QUADRANTS = {

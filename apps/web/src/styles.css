@@ -4,7 +4,7 @@
   --mono: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
 }
 
-body[data-theme="graphite"] {
+body[data-theme="dark"] {
   color-scheme: dark;
   --bg: #1a1d23;
   --surface: #22262e;
@@ -49,7 +49,7 @@ body[data-theme="graphite"] {
   --leader-opacity: 0.45;
 }
 
-body[data-theme="fog"] {
+body[data-theme="light"] {
   color-scheme: light;
   --bg: #dce2e9;
   --surface: #e9edf3;
@@ -134,37 +134,65 @@ button {
   outline-offset: 2px;
 }
 
-.app-shell {
+/* ---------- frame + sidebar ---------- */
+.app-frame {
   height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-/* ---------- top bar ---------- */
-.topbar {
-  height: 64px;
-  flex: 0 0 64px;
+.sidebar {
+  flex: 0 0 auto;
+  width: 238px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 10px 12px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  transition: width 0.18s ease, padding 0.18s ease;
+  /* Clip the labels, counts and toggle while the rail animates, so they slide
+     in from the edge instead of spilling over the workspace. */
+  overflow: hidden;
+  z-index: 3;
+}
+
+.sidebar-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 18px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  position: relative;
-  z-index: 50;
+  gap: 8px;
+  padding: 0 6px 10px;
+  /* Keep the toggle inside the head while the rail is still narrow. */
+  overflow: hidden;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 180px;
+  /* Never let the rail squeeze the mark — the toggle used to land on top of it
+     during the expand transition. */
+  min-width: 30px;
+  flex: 1;
+}
+
+.brand-copy {
+  min-width: 0;
 }
 
 .brand-mark {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   border-radius: 9px;
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -172,6 +200,28 @@ button {
   gap: 2px;
   padding: 4px;
   background: var(--text);
+}
+
+/* Collapsed rail: the mark doubles as the expand control. */
+.brand-mark-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  cursor: pointer;
+  transition: box-shadow 0.14s ease;
+}
+
+.brand-mark-button:hover {
+  box-shadow: 0 0 0 3px var(--surface-muted);
+}
+
+.brand-mark-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .brand-mark span {
@@ -192,22 +242,162 @@ button {
 }
 
 .brand h1 {
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 700;
   margin: 0;
   letter-spacing: 0.01em;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.brand p {
-  font-size: 10.5px;
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
   color: var(--text-muted);
-  margin: 2px 0 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+
+.nav-item:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.nav-item.active {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 650;
+  box-shadow: 0 1px 3px var(--card-shadow);
+}
+
+.nav-item.active .nav-icon {
+  color: var(--accent);
+}
+
+.nav-icon {
+  flex: 0 0 17px;
+  display: grid;
+  place-items: center;
+  color: currentColor;
+}
+
+.nav-label {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  display: grid;
+  place-items: center;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-foot .nav-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-toggle {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 0.14s, color 0.14s, transform 0.18s;
+}
+
+.sidebar-toggle:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.sidebar-scrim {
+  display: none;
+}
+
+.icon-btn.mobile-menu {
+  display: none;
+}
+
+@media (min-width: 821px) {
+  /* Collapsing must not nudge anything inside the rail: padding, head inset and
+     nav padding stay identical to the expanded state, so the logo and the icons
+     keep their x while only the trailing content is hidden. */
+  .is-collapsed .sidebar {
+    width: 66px;
+  }
+
+  .is-collapsed .brand-copy,
+  .is-collapsed .nav-label,
+  .is-collapsed .nav-count {
+    display: none;
+  }
+
+  .is-collapsed .sidebar-toggle {
+    display: none;
+  }
+}
+
+/* ---------- top bar ---------- */
+.topbar {
+  height: 60px;
+  flex: 0 0 60px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 50;
+}
+
+.topbar-spacer {
+  flex: 1;
 }
 
 .search {
-  width: 250px;
+  width: 280px;
   height: 34px;
   display: flex;
   align-items: center;
@@ -244,50 +434,143 @@ button {
   opacity: 0.8;
 }
 
-.quad-select {
-  position: relative;
+/* ---------- custom select ---------- */
+.select {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 34px;
-  padding: 0 26px 0 10px;
+  height: 30px;
+  padding: 0 9px;
   border: 1px solid transparent;
   border-radius: 9px;
   background: var(--surface-muted);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11.5px;
   flex: 0 0 auto;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  margin-left: 4px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s,
+    box-shadow 0.15s;
 }
 
-.quad-select:focus-within,
-.quad-select.active {
+.select:hover {
   background: var(--surface-raised);
-  border-color: var(--border-strong);
   color: var(--text);
 }
 
-.quad-select select {
-  width: 128px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  outline: 0;
-  padding: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
+.select.open,
+.select:focus-visible {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 2px 10px var(--card-shadow);
+  outline: none;
 }
 
-.quad-select > svg {
-  position: absolute;
-  right: 9px;
-  pointer-events: none;
+.select-value {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.select-hint {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-muted-2);
   color: var(--text-muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  display: grid;
+  place-items: center;
 }
 
-.quad-select-mark {
+.select-chevron {
+  flex: 0 0 12px;
+  color: var(--text-muted);
+  transition: transform 0.16s ease, color 0.16s;
+}
+
+.select.open .select-chevron {
+  transform: rotate(180deg);
+  color: var(--text);
+}
+
+.select-menu {
+  position: fixed;
+  z-index: 400;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-raised);
+  box-shadow: 0 16px 40px var(--popover-shadow);
+  animation: select-in 0.12s ease-out;
+  max-height: min(320px, 70vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+@keyframes select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.select-option.active {
+  background: var(--surface-muted);
+}
+
+.select-option.selected {
+  font-weight: 600;
+}
+
+.select-option-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.select-option-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.select-dot {
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.select-dot.square {
+  border-radius: 3px;
+}
+
+.select-check {
+  flex: 0 0 12px;
+  color: var(--accent);
+}
+
+.quad-mark {
   width: 10px;
   height: 10px;
   flex: 0 0 10px;
@@ -300,66 +583,24 @@ button {
   );
 }
 
-.quad-select.q1 .quad-select-mark {
+.quad-mark.q1 {
   border-radius: 50%;
   background: var(--q1);
 }
 
-.quad-select.q2 .quad-select-mark {
+.quad-mark.q2 {
   border-radius: 50%;
   background: var(--q2);
 }
 
-.quad-select.q3 .quad-select-mark {
+.quad-mark.q3 {
   border-radius: 50%;
   background: var(--q3);
 }
 
-.quad-select.q4 .quad-select-mark {
+.quad-mark.q4 {
   border-radius: 50%;
   background: var(--q4);
-}
-
-.tabs {
-  margin-left: auto;
-  display: flex;
-  background: var(--surface-muted);
-  border-radius: 9px;
-  padding: 3px;
-  gap: 2px;
-  flex: 0 0 auto;
-}
-
-.tab {
-  height: 28px;
-  border: 0;
-  background: transparent;
-  padding: 0 9px;
-  border-radius: 7px;
-  font-size: 11px;
-  color: var(--text-muted);
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.tab.active {
-  background: var(--surface-raised);
-  color: var(--text);
-  font-weight: 600;
-  box-shadow: 0 1px 3px var(--card-shadow);
-}
-
-.tab .count {
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--surface-muted-2);
-  font-size: 9px;
-  display: grid;
-  place-items: center;
 }
 
 .add-btn {
@@ -368,7 +609,7 @@ button {
   background: var(--accent);
   color: var(--accent-contrast);
   border-radius: 9px;
-  padding: 0 12px;
+  padding: 0 13px;
   font-size: 12px;
   font-weight: 700;
   display: inline-flex;
@@ -2269,7 +2510,7 @@ textarea {
 
 .theme-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -2281,7 +2522,8 @@ textarea {
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
+  min-width: 0;
 }
 
 .theme-btn.active {
@@ -2716,6 +2958,42 @@ textarea {
   transform: translateY(calc(-100% - 2px));
 }
 
+.cal-hour-label.split {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.cal-hour-label.rest {
+  color: color-mix(in srgb, var(--text-muted) 55%, transparent);
+}
+
+.cal-rest-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: block;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 7px,
+    color-mix(in srgb, var(--text) 3.5%, transparent) 7px 8px
+  );
+  border-top: 1px dashed var(--border-strong);
+  pointer-events: none;
+}
+
+.cal-rest-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  border-top: 1px dashed var(--border-strong);
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 7px,
+    color-mix(in srgb, var(--text) 3%, transparent) 7px 8px
+  );
+}
+
 .cal-day-col {
   position: relative;
   border-left: 1px solid var(--border);
@@ -2724,7 +3002,7 @@ textarea {
     var(--border) 1px,
     transparent 1px
   );
-  background-size: 100% var(--hour-height, 56px);
+  background-size: 100% var(--hour-height, 40px);
 }
 
 .cal-day-col.today {
@@ -2830,19 +3108,62 @@ textarea {
 }
 
 .cal-sub {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
   padding: 8px 0;
   border-top: 1px solid var(--border);
 }
 
-.cal-sub > i {
-  flex: 0 0 8px;
-  width: 8px;
-  height: 8px;
-  margin-top: 5px;
+.cal-sub-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cal-sub-dot {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
   border-radius: 50%;
+  border: 0;
+  padding: 0;
+  box-shadow: 0 0 0 0 var(--border-strong);
+  transition: box-shadow 0.15s;
+}
+
+.cal-sub-dot:hover,
+.cal-sub-dot.open {
+  box-shadow: 0 0 0 3px var(--surface-muted-2);
+}
+
+.cal-sub-colors {
+  padding: 6px 0 2px 20px;
+}
+
+.cal-color-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.cal-color-dot {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  box-shadow: 0 0 0 1px var(--border) inset;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+
+.cal-color-dot:hover {
+  transform: scale(1.12);
+}
+
+.cal-color-dot.active {
+  border-color: var(--surface-raised);
+  box-shadow: 0 0 0 2px var(--text);
 }
 
 .cal-sub-copy {
@@ -3032,19 +3353,43 @@ textarea {
 }
 
 /* ---------- responsive ---------- */
-@media (max-width: 1180px) {
-  .search {
-    width: 200px;
+@media (max-width: 820px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 246px;
+    z-index: 130;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 18px 0 48px var(--popover-shadow);
   }
 
-  .brand {
-    min-width: 160px;
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    background: var(--backdrop);
+  }
+
+  .icon-btn.mobile-menu {
+    display: grid;
   }
 }
 
-@media (max-width: 1080px) {
-  .quad-select {
-    display: none;
+@media (max-width: 1180px) {
+  .search {
+    width: 210px;
   }
 }
 
@@ -3056,7 +3401,7 @@ textarea {
 
   .drawer {
     position: fixed;
-    top: 108px;
+    top: 104px;
     right: 0;
     bottom: 0;
     width: min(380px, 100%);
@@ -3073,21 +3418,13 @@ textarea {
   .workspace.has-drawer .drawer-backdrop {
     display: block;
     position: fixed;
-    inset: 108px 0 0 0;
+    inset: 104px 0 0 0;
     z-index: 70;
     background: var(--backdrop);
   }
 }
 
 @media (max-width: 900px) {
-  .brand p {
-    display: none;
-  }
-
-  .brand {
-    min-width: 0;
-  }
-
   .brand h1 {
     font-size: 13px;
   }
@@ -3097,32 +3434,18 @@ textarea {
     width: auto;
     min-width: 120px;
   }
-
-  .tabs {
-    order: 10;
-  }
 }
 
 @media (max-width: 720px) {
   .topbar {
-    flex-wrap: wrap;
-    height: auto;
-    flex: 0 0 auto;
-    padding: 10px 12px;
+    padding: 0 12px;
     gap: 8px;
   }
 
-  .brand {
-    width: 100%;
-  }
-
   .search {
-    width: 100%;
-    flex: 1 1 100%;
-  }
-
-  .add-btn {
-    margin-left: auto;
+    width: auto;
+    flex: 1;
+    min-width: 0;
   }
 
   .filterbar {

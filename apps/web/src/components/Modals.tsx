@@ -13,6 +13,7 @@ import {
 } from "@eisenhower/shared";
 import { DateInput } from "./DateInput";
 import { translations, type Locale } from "../lib/i18n";
+import { useSystemTheme } from "../lib/theme";
 
 interface AddTaskModalProps {
   locale?: Locale;
@@ -328,6 +329,7 @@ export function AddTaskModal({ locale = "zh", onClose, onCreate }: AddTaskModalP
 interface SettingsDialogProps {
   settings: Settings;
   tags: Tag[];
+  locale?: Locale;
   onClose: () => void;
   onUpdateSettings: (patch: Partial<Settings>) => void;
   onDeleteTag: (tag: Tag) => void;
@@ -340,28 +342,36 @@ const THEME_OPTIONS: Array<{
   swatches: string[];
 }> = [
   {
-    value: "graphite",
-    label: "Graphite",
-    description: "Dark, calm, easy on the eyes.",
+    value: "light",
+    label: "Light",
+    description: "Soft gray daylight.",
+    swatches: ["#E9EDF3", "#E03A47", "#007FD4", "#E0A100"]
+  },
+  {
+    value: "dark",
+    label: "Dark",
+    description: "Calm, easy on the eyes.",
     swatches: ["#1A1D23", "#F04452", "#0087EE", "#FFB020"]
   },
   {
-    value: "fog",
-    label: "Fog",
-    description: "Soft gray daylight, low glare.",
-    swatches: ["#DCE2E9", "#E03A47", "#007FD4", "#E0A100"]
+    value: "system",
+    label: "System",
+    description: "Match your device.",
+    swatches: ["#1A1D23", "#E9EDF3", "#007FD4", "#FFB020"]
   }
 ];
 
 export function SettingsDialog({
   settings,
   tags,
+  locale = "zh",
   onClose,
   onUpdateSettings,
   onDeleteTag
 }: SettingsDialogProps) {
   const [threshold, setThreshold] = useState(settings.threshold);
   const timerRef = useRef<number | null>(null);
+  const systemTheme = useSystemTheme();
 
   useEffect(() => {
     setThreshold(settings.threshold);
@@ -406,8 +416,8 @@ export function SettingsDialog({
       >
         <div className="modal-header">
           <div>
-            <h2>Settings</h2>
-            <p>Thresholds and themes are saved locally in your database.</p>
+            <h2>{locale === "zh" ? "系统设置" : "Settings"}</h2>
+            <p>{locale === "zh" ? "象限阈值与主题模式保存在本地数据库中。" : "Thresholds and themes are saved locally in your database."}</p>
           </div>
           <button className="drawer-close" onClick={close} aria-label="Close">
             ×
@@ -416,7 +426,7 @@ export function SettingsDialog({
 
         <div className="field">
           <label htmlFor="settings-threshold">
-            Quadrant threshold <output>{threshold}</output>
+            {locale === "zh" ? "象限划分阈值" : "Quadrant threshold"} <output>{threshold}</output>
           </label>
           <input
             id="settings-threshold"
@@ -435,12 +445,14 @@ export function SettingsDialog({
             <span>70</span>
           </div>
           <p className="hint">
-            A task exactly on the threshold is shown as Pending review.
+            {locale === "zh"
+              ? "重要度或紧迫度恰好等于阈值的任务将被归类为待评估 (Pending review)。"
+              : "A task exactly on the threshold is shown as Pending review."}
           </p>
         </div>
 
         <div className="field">
-          <label>Theme</label>
+          <label>{locale === "zh" ? "主题外观" : "Theme"}</label>
           <div className="theme-switch">
             {THEME_OPTIONS.map((option) => (
               <button
@@ -455,11 +467,36 @@ export function SettingsDialog({
                     <i key={color} style={{ background: color }} />
                   ))}
                 </span>
-                <strong>{option.label}</strong>
-                <span>{option.description}</span>
+                <strong>
+                  {locale === "zh"
+                    ? option.value === "light"
+                      ? "浅色 (Light)"
+                      : option.value === "dark"
+                        ? "深色 (Dark)"
+                        : "跟随系统 (System)"
+                    : option.label}
+                </strong>
+                <span>
+                  {option.value === "system"
+                    ? (locale === "zh"
+                        ? `跟随设备 · ${systemTheme === "dark" ? "深色" : "浅色"}`
+                        : `Your device · ${systemTheme}`)
+                    : (locale === "zh"
+                        ? (option.value === "light"
+                            ? "柔和明亮，清爽通透"
+                            : "低对比度，沉浸护眼")
+                        : option.description)}
+                </span>
               </button>
             ))}
           </div>
+          {settings.theme === "system" && (
+            <p className="hint">
+              {locale === "zh"
+                ? `跟随系统外观 — 当前为${systemTheme === "dark" ? "深色" : "浅色"}。`
+                : `Following the system color scheme — currently ${systemTheme}.`}
+            </p>
+          )}
         </div>
 
         <div className="field">

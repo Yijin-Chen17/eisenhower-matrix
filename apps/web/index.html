@@ -5,8 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Eisenhower Matrix</title>
   </head>
-  <body data-theme="graphite">
+  <body data-theme="dark">
     <div id="root"></div>
+    <script>
+      // Paint the system color scheme before React mounts so the first frame
+      // already matches the OS. The stored preference overrides this on load.
+      document.body.dataset.theme = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches
+        ? "dark"
+        : "light";
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
