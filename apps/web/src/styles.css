@@ -160,6 +160,9 @@ button {
   background: var(--surface);
   border-right: 1px solid var(--border);
   transition: width 0.18s ease, padding 0.18s ease;
+  /* Clip the labels, counts and toggle while the rail animates, so they slide
+     in from the edge instead of spilling over the workspace. */
+  overflow: hidden;
   z-index: 3;
 }
 
@@ -168,13 +171,17 @@ button {
   align-items: center;
   gap: 8px;
   padding: 0 6px 10px;
+  /* Keep the toggle inside the head while the rail is still narrow. */
+  overflow: hidden;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 0;
+  /* Never let the rail squeeze the mark — the toggle used to land on top of it
+     during the expand transition. */
+  min-width: 30px;
   flex: 1;
 }
 
@@ -254,6 +261,7 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+  overflow: hidden;
   height: 36px;
   padding: 0 10px;
   border: 1px solid transparent;
@@ -352,37 +360,17 @@ button {
 }
 
 @media (min-width: 821px) {
+  /* Collapsing must not nudge anything inside the rail: padding, head inset and
+     nav padding stay identical to the expanded state, so the logo and the icons
+     keep their x while only the trailing content is hidden. */
   .is-collapsed .sidebar {
     width: 66px;
-    padding-left: 8px;
-    padding-right: 8px;
-  }
-
-  .is-collapsed .sidebar-head {
-    align-items: center;
-    justify-content: center;
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  .is-collapsed .brand {
-    flex: 0 0 auto;
   }
 
   .is-collapsed .brand-copy,
   .is-collapsed .nav-label,
   .is-collapsed .nav-count {
     display: none;
-  }
-
-  .is-collapsed .nav-item {
-    justify-content: center;
-    padding: 0;
-    gap: 0;
-  }
-
-  .is-collapsed .sidebar-foot {
-    flex-direction: column;
   }
 
   .is-collapsed .sidebar-toggle {
@@ -3384,10 +3372,6 @@ textarea {
 
   .sidebar-toggle {
     display: none;
-  }
-
-  .sidebar-head {
-    min-height: 0;
   }
 
   .sidebar-scrim {
