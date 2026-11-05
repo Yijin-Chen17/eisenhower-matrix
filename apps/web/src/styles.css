@@ -4,7 +4,7 @@
   --mono: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
 }
 
-body[data-theme="graphite"] {
+body[data-theme="dark"] {
   color-scheme: dark;
   --bg: #1a1d23;
   --surface: #22262e;
@@ -49,7 +49,7 @@ body[data-theme="graphite"] {
   --leader-opacity: 0.45;
 }
 
-body[data-theme="fog"] {
+body[data-theme="light"] {
   color-scheme: light;
   --bg: #dce2e9;
   --surface: #e9edf3;
@@ -2269,7 +2269,7 @@ textarea {
 
 .theme-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -2281,7 +2281,8 @@ textarea {
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
+  min-width: 0;
 }
 
 .theme-btn.active {

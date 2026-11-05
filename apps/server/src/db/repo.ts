@@ -5,6 +5,7 @@ import {
   calendarColorFor,
   clampScore,
   clampThreshold,
+  normalizeTheme,
   tagColorFor,
   type CalendarSourceType,
   type CalendarSubscription,
@@ -307,7 +308,7 @@ export function getSettings(db: AppDb): Settings {
     const parsed = JSON.parse(row.value) as Partial<Settings>;
     return {
       threshold: clampThreshold(parsed.threshold ?? DEFAULT_SETTINGS.threshold),
-      theme: parsed.theme === "fog" ? "fog" : "graphite"
+      theme: normalizeTheme(parsed.theme)
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

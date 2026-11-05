@@ -17,7 +17,7 @@ The app is a single-user local full stack: React + Vite in the browser, Hono + S
 - **Views**: In progress matrix; Completed and Archived lists.
 - **Undo**: completing or archiving a task shows a 5-second undo toast.
 - **Keyboard**: `n` adds a task, `/` focuses search, `Esc` closes overlays, arrow keys nudge a focused card/dot (Shift for ±10).
-- **Themes**: Graphite (dark) and Fog (soft gray), persisted in SQLite.
+- **Themes**: Light, Dark, or follow the system color scheme (live via `prefers-color-scheme`), persisted in SQLite.
 - **Backup**: `npm run backup` writes a consistent SQLite backup with a timestamp.
 
 ## Requirements

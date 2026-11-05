@@ -39,6 +39,7 @@ import {
   useUpdateTask
 } from "./hooks";
 import { localDayRange, overlaps } from "./lib/calendar";
+import { applyTheme, resolveTheme, useSystemTheme } from "./lib/theme";
 
 interface ToastState {
   message: string;
@@ -86,6 +87,8 @@ export default function App() {
 
   const settings: Settings = settingsQuery.data ?? DEFAULT_SETTINGS;
   const tags = tagsQuery.data ?? [];
+  const systemTheme = useSystemTheme();
+  const resolvedTheme = resolveTheme(settings.theme, systemTheme);
 
   const tasks =
     view === "active" || view === "calendar"
@@ -197,8 +200,8 @@ export default function App() {
   }, [selectedTask, conflictEventsQuery.data, activeQuery.data]);
 
   useEffect(() => {
-    document.body.dataset.theme = settings.theme;
-  }, [settings.theme]);
+    applyTheme(resolvedTheme, settings.theme);
+  }, [resolvedTheme, settings.theme]);
 
   useEffect(() => {
     if (selectedId && !activeQuery.data?.some((task) => task.id === selectedId)) {

@@ -116,13 +116,13 @@ describe("localApi", () => {
 
   it("persists settings", async () => {
     const settings = await localApi.updateSettings({
-      theme: "fog",
+      theme: "light",
       threshold: 60
     });
 
-    expect(settings).toEqual({ theme: "fog", threshold: 60 });
+    expect(settings).toEqual({ theme: "light", threshold: 60 });
     expect(await localApi.getSettings()).toEqual({
-      theme: "fog",
+      theme: "light",
       threshold: 60
     });
   });
