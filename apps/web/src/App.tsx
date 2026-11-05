@@ -559,47 +559,6 @@ export default function App() {
           </button>
         </div>
 
-        {view === "active" && (
-          <label
-            className={`quad-select${focusQuadrant ? ` active q${focusQuadrant}` : ""}`}
-            title="Focus a quadrant"
-          >
-            <span className="quad-select-mark" aria-hidden="true" />
-            <select
-              aria-label="Focus quadrant"
-              value={focusQuadrant === null ? "" : String(focusQuadrant)}
-              onChange={(event) => {
-                const value = event.target.value;
-                changeFocus(
-                  value === "" ? null : (Number(value) as KnownQuadrant)
-                );
-              }}
-            >
-              <option value="">All quadrants</option>
-              {([1, 2, 3, 4] as const).map((quadrant) => (
-                <option key={quadrant} value={quadrant}>
-                  {QUADRANTS[quadrant].name} · {quadrantCounts[quadrant]}
-                </option>
-              ))}
-            </select>
-            <svg
-              viewBox="0 0 16 16"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              aria-hidden="true"
-            >
-              <path
-                d="m4 6 4 4 4-4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </label>
-        )}
-
         <button className="add-btn" onClick={() => setAddOpen(true)}>
           + Add task
         </button>
@@ -660,6 +619,46 @@ export default function App() {
           <button className="clear-filter" onClick={clearFilters}>
             Clear filters
           </button>
+        )}
+        {view === "active" && (
+          <label
+            className={`quad-select${focusQuadrant ? ` active q${focusQuadrant}` : ""}`}
+            title="Focus a quadrant"
+          >
+            <span className="quad-select-mark" aria-hidden="true" />
+            <select
+              aria-label="Focus quadrant"
+              value={focusQuadrant === null ? "" : String(focusQuadrant)}
+              onChange={(event) => {
+                const value = event.target.value;
+                changeFocus(
+                  value === "" ? null : (Number(value) as KnownQuadrant)
+                );
+              }}
+            >
+              <option value="">All quadrants</option>
+              {([1, 2, 3, 4] as const).map((quadrant) => (
+                <option key={quadrant} value={quadrant}>
+                  {QUADRANTS[quadrant].name} · {quadrantCounts[quadrant]}
+                </option>
+              ))}
+            </select>
+            <svg
+              viewBox="0 0 16 16"
+              width="12"
+              height="12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              aria-hidden="true"
+            >
+              <path
+                d="m4 6 4 4 4-4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </label>
         )}
       </div>
 
