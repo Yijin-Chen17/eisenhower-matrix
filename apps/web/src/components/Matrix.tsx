@@ -665,7 +665,7 @@ export function Matrix({
         )}
       </div>
 
-      {hover && (
+      {hover && !selectedId && (
         <div
           className="tooltip"
           style={{
