@@ -164,9 +164,14 @@ button {
 }
 
 .sidebar-head {
+  /* mark 30 + gap 8 + toggle 28, plus the bottom padding */
+  --head-stack: calc(30px + 8px + 28px + 10px);
   display: flex;
   align-items: center;
   gap: 8px;
+  /* The collapsed rail stacks the mark and the toggle, so reserve that height
+     up front — collapsing must not shift everything below it. */
+  min-height: var(--head-stack);
   padding: 0 6px 10px;
 }
 
@@ -220,13 +225,6 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.brand p {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin: 2px 0 0;
-  white-space: nowrap;
 }
 
 .sidebar-nav {
@@ -310,10 +308,6 @@ button {
   min-width: 0;
 }
 
-.sidebar-head .sidebar-toggle {
-  margin-left: -3px;
-}
-
 .sidebar-toggle {
   flex: 0 0 28px;
   width: 28px;
@@ -350,14 +344,10 @@ button {
   .is-collapsed .sidebar-head {
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
     gap: 8px;
     padding-left: 0;
     padding-right: 0;
-  }
-
-  .is-collapsed .sidebar-head .sidebar-toggle {
-    margin-left: 0;
   }
 
   .is-collapsed .brand {
@@ -439,6 +429,175 @@ button {
 .search input::placeholder {
   color: var(--text-muted);
   opacity: 0.8;
+}
+
+/* ---------- custom select ---------- */
+.select {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  flex: 0 0 auto;
+  margin-left: 4px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s,
+    box-shadow 0.15s;
+}
+
+.select:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.select.open,
+.select:focus-visible {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 2px 10px var(--card-shadow);
+  outline: none;
+}
+
+.select-value {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.select-hint {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-muted-2);
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  display: grid;
+  place-items: center;
+}
+
+.select-chevron {
+  flex: 0 0 12px;
+  color: var(--text-muted);
+  transition: transform 0.16s ease, color 0.16s;
+}
+
+.select.open .select-chevron {
+  transform: rotate(180deg);
+  color: var(--text);
+}
+
+.select-menu {
+  position: fixed;
+  z-index: 400;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-raised);
+  box-shadow: 0 16px 40px var(--popover-shadow);
+  animation: select-in 0.12s ease-out;
+  max-height: min(320px, 70vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+@keyframes select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.select-option.active {
+  background: var(--surface-muted);
+}
+
+.select-option.selected {
+  font-weight: 600;
+}
+
+.select-option-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.select-option-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.select-dot {
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.select-dot.square {
+  border-radius: 3px;
+}
+
+.select-check {
+  flex: 0 0 12px;
+  color: var(--accent);
+}
+
+.quad-mark {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border-radius: 3px;
+  background: conic-gradient(
+    var(--q2) 0 25%,
+    var(--q1) 0 50%,
+    var(--q4) 0 75%,
+    var(--q3) 0
+  );
+}
+
+.quad-mark.q1 {
+  border-radius: 50%;
+  background: var(--q1);
+}
+
+.quad-mark.q2 {
+  border-radius: 50%;
+  background: var(--q2);
+}
+
+.quad-mark.q3 {
+  border-radius: 50%;
+  background: var(--q3);
+}
+
+.quad-mark.q4 {
+  border-radius: 50%;
+  background: var(--q4);
 }
 
 .add-btn {
@@ -3212,6 +3371,10 @@ textarea {
     display: none;
   }
 
+  .sidebar-head {
+    min-height: 0;
+  }
+
   .sidebar-scrim {
     display: block;
     position: fixed;
@@ -3263,10 +3426,6 @@ textarea {
 }
 
 @media (max-width: 900px) {
-  .brand p {
-    display: none;
-  }
-
   .brand h1 {
     font-size: 13px;
   }

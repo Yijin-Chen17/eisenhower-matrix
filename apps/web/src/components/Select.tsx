@@ -95,14 +95,21 @@ export function Select({
       if (triggerRef.current?.contains(target)) return;
       close();
     };
-    const onScroll = () => close();
+    // The page moving under an open menu would detach it from its trigger, but
+    // the list scrolling itself (or `scrollIntoView` on the active option) must
+    // not close it.
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && menuRef.current?.contains(target)) return;
+      close();
+    };
 
     document.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("resize", onScroll);
+    window.addEventListener("resize", close);
     window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("resize", close);
       window.removeEventListener("scroll", onScroll, true);
     };
   }, [open, close]);

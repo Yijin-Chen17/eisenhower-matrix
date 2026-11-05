@@ -72,16 +72,6 @@ const NAV_ITEMS: NavItem[] = [
     )
   },
   {
-    view: "calendar",
-    label: "Calendar",
-    icon: (
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="5" width="18" height="16" rx="2.4" />
-        <path d="M8 3v4M16 3v4M3 10.5h18" />
-      </svg>
-    )
-  },
-  {
     view: "completed",
     label: "Completed",
     count: "completed",
@@ -101,6 +91,16 @@ const NAV_ITEMS: NavItem[] = [
         <rect x="3" y="4" width="18" height="4.4" rx="1.2" />
         <path d="M5 8.4V19a1.4 1.4 0 0 0 1.4 1.4h11.2A1.4 1.4 0 0 0 19 19V8.4" />
         <path d="M10 12.4h4" />
+      </svg>
+    )
+  },
+  {
+    view: "calendar",
+    label: "Calendar",
+    icon: (
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5" width="18" height="16" rx="2.4" />
+        <path d="M8 3v4M16 3v4M3 10.5h18" />
       </svg>
     )
   }
@@ -568,6 +568,18 @@ export default function App() {
         className={`sidebar${sidebarOpen ? " open" : ""}`}
       >
         <div className="sidebar-head">
+          <div className="brand">
+            <div className="brand-mark" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="brand-copy">
+              <h1>Eisenhower Matrix</h1>
+            </div>
+          </div>
+
           <button
             className="sidebar-toggle"
             onClick={() => setSidebarCollapsed((value) => !value)}
@@ -589,19 +601,6 @@ export default function App() {
               <path d="m14 6-6 6 6 6" />
             </svg>
           </button>
-
-          <div className="brand">
-            <div className="brand-mark" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className="brand-copy">
-              <h1>Eisenhower Matrix</h1>
-              <p>Local priority board</p>
-            </div>
-          </div>
         </div>
 
         <nav className="sidebar-nav" aria-label="Views">
