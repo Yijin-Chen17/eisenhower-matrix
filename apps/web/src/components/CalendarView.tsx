@@ -19,6 +19,7 @@ import {
   CALENDAR_START_HOUR,
   GRID_MINUTES,
   HOUR_HEIGHT,
+  HOUR_SPACING,
   MAX_HOUR_HEIGHT,
   MIN_HOUR_HEIGHT,
   REST_END_HOUR,
@@ -246,8 +247,9 @@ export function CalendarView({
   }, [weekStart, events, tasks, threshold, calendarsById]);
 
   /**
-   * Scale the grid so that 07:00–24:00 always fills the visible area; the rest
-   * band then lives just below the fold.
+   * Fit a full day to the visible area, then apply HOUR_SPACING. At 2 the rows
+   * are twice as tall as the viewport allows for a whole day, so 07:00–24:00
+   * overflows and the later hours scroll into view.
    */
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
@@ -262,7 +264,9 @@ export function CalendarView({
       const perHour = Math.floor(
         available / (CALENDAR_END_HOUR - CALENDAR_START_HOUR)
       );
-      setHourHeight(clamp(perHour, MIN_HOUR_HEIGHT, MAX_HOUR_HEIGHT));
+      setHourHeight(
+        clamp(perHour * HOUR_SPACING, MIN_HOUR_HEIGHT, MAX_HOUR_HEIGHT)
+      );
     };
 
     update();

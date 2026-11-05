@@ -11,7 +11,12 @@ export const REST_START_MINUTES =
   (CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60;
 export const HOUR_HEIGHT = 40;
 export const MIN_HOUR_HEIGHT = 22;
-export const MAX_HOUR_HEIGHT = 72;
+export const MAX_HOUR_HEIGHT = 144;
+/**
+ * Multiplier on the viewport-fitted row height. 2 = twice the breathing room:
+ * the day stops fitting on one screen and the evening scrolls into view.
+ */
+export const HOUR_SPACING = 2;
 
 export function startOfWeek(date: Date): Date {
   const next = new Date(date);
