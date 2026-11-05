@@ -9,3 +9,4 @@ backups/
 
 # tsx temp dirs created when the server runs outside npm
 apps/server/undefined/
+*.timestamp-*.mjs

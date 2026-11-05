@@ -14,7 +14,7 @@ The app is a single-user local full stack: React + Vite in the browser, Hono + S
 - **Organization**: due dates with overdue/today/soon states, tags, title/notes search, tag filtering (OR).
 - **Quadrant focus**: pick a quadrant from the top bar, or click its label on the matrix, to see all of its tasks with a List/Map toggle. Map keeps the spatial importance/urgency layout.
 - **Calendar**: week view with read-only ICS subscriptions/imports, task time blocks, a separate Due column, and overlap highlighting.
-- **Views**: In progress matrix; Completed and Archived lists.
+- **Views**: a collapsible left sidebar switches between the In progress matrix, the Calendar week view, and the Completed / Archived lists. Settings sits at the bottom of the sidebar; the rail remembers whether it was collapsed.
 - **Undo**: completing or archiving a task shows a 5-second undo toast.
 - **Keyboard**: `n` adds a task, `/` focuses search, `Esc` closes overlays, arrow keys nudge a focused card/dot (Shift for ±10).
 - **Themes**: Light, Dark, or follow the system color scheme (live via `prefers-color-scheme`), persisted in SQLite.
