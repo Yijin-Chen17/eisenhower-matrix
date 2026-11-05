@@ -33,7 +33,9 @@ import { QuadrantFocus } from "./components/QuadrantFocus";
 import type { QuadrantViewMode } from "./components/QuadrantFocus";
 import { TaskDrawer } from "./components/TaskDrawer";
 import { TaskLists } from "./components/TaskLists";
+import { GuidePage } from "./components/GuidePage";
 import { Select } from "./components/Select";
+import { navigate, useRoute } from "./lib/router";
 import {
   useCreateTag,
   useCreateTask,
@@ -129,6 +131,7 @@ const SIDEBAR_KEY = "eisenhower.sidebarCollapsed";
 export default function App() {
   const [locale, setLocale] = useState<Locale>(getInitialLocale);
   const t = translations[locale];
+  const route = useRoute();
 
   function toggleLocale() {
     const next: Locale = locale === "zh" ? "en" : "zh";
@@ -317,6 +320,8 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (route === "guide") return;
+
       const target = event.target;
       const typing =
         target instanceof HTMLElement &&
@@ -349,7 +354,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [route]);
 
   useEffect(() => {
     applyTheme(resolvedTheme, settings.theme);
@@ -614,6 +619,10 @@ export default function App() {
         ? "Add your first task to start mapping priorities."
         : "Tasks will appear here when their status changes."
       : "Try another search or clear the filters.";
+
+  if (route === "guide") {
+    return <GuidePage locale={locale} onBack={() => navigate("board")} />;
+  }
 
   return (
     <div className={`app-frame${sidebarCollapsed ? " is-collapsed" : ""}`}>
@@ -992,6 +1001,10 @@ export default function App() {
           tags={tags}
           locale={locale}
           onToggleLocale={toggleLocale}
+          onOpenGuide={() => {
+            setSettingsOpen(false);
+            navigate("guide");
+          }}
           onClose={() => setSettingsOpen(false)}
           onUpdateSettings={handleUpdateSettings}
           onDeleteTag={handleDeleteTag}

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   IMPORTANCE_TIERS,
+  QUADRANTS,
   calculateUrgencyFromDueDate,
   dueLabel,
   dueState,
@@ -331,49 +332,84 @@ interface SettingsDialogProps {
   tags: Tag[];
   locale?: Locale;
   onToggleLocale: () => void;
+  onOpenGuide: () => void;
   onClose: () => void;
   onUpdateSettings: (patch: Partial<Settings>) => void;
   onDeleteTag: (tag: Tag) => void;
 }
 
-const THEME_OPTIONS: Array<{
-  value: Theme;
+type SettingsSectionId = "general" | "matrix" | "tags" | "about";
+
+const THEME_VALUES: Theme[] = ["light", "dark", "system"];
+
+const SETTINGS_ICONS: Record<SettingsSectionId, ReactNode> = {
+  general: (
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+      <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="8" cy="17" r="2" />
+    </svg>
+  ),
+  matrix: (
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round">
+      <rect x="3.5" y="3.5" width="7.2" height="7.2" rx="1.6" />
+      <rect x="13.3" y="3.5" width="7.2" height="7.2" rx="1.6" />
+      <rect x="3.5" y="13.3" width="7.2" height="7.2" rx="1.6" />
+      <rect x="13.3" y="13.3" width="7.2" height="7.2" rx="1.6" />
+    </svg>
+  ),
+  tags: (
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h5.2a2 2 0 0 1 1.4.6l7.3 7.3a2 2 0 0 1 0 2.8l-4.7 4.7a2 2 0 0 1-2.8 0L4.6 12.1a2 2 0 0 1-.6-1.4z" />
+      <circle cx="8.6" cy="8.6" r="1.3" />
+    </svg>
+  ),
+  about: (
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11v5.2" />
+      <circle cx="12" cy="7.9" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  )
+};
+
+function SettingsRow({
+  label,
+  desc,
+  stacked = false,
+  children
+}: {
   label: string;
-  description: string;
-  swatches: string[];
-}> = [
-  {
-    value: "light",
-    label: "Light",
-    description: "Soft gray daylight.",
-    swatches: ["#E9EDF3", "#E03A47", "#007FD4", "#E0A100"]
-  },
-  {
-    value: "dark",
-    label: "Dark",
-    description: "Calm, easy on the eyes.",
-    swatches: ["#1A1D23", "#F04452", "#0087EE", "#FFB020"]
-  },
-  {
-    value: "system",
-    label: "System",
-    description: "Match your device.",
-    swatches: ["#1A1D23", "#E9EDF3", "#007FD4", "#FFB020"]
-  }
-];
+  desc?: string;
+  stacked?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`ds-row${stacked ? " is-stacked" : ""}`}>
+      <div className="ds-row-copy">
+        <span className="ds-row-label">{label}</span>
+        {desc && <span className="ds-row-desc">{desc}</span>}
+      </div>
+      <div className="ds-row-control">{children}</div>
+    </div>
+  );
+}
 
 export function SettingsDialog({
   settings,
   tags,
   locale = "zh",
   onToggleLocale,
+  onOpenGuide,
   onClose,
   onUpdateSettings,
   onDeleteTag
 }: SettingsDialogProps) {
+  const [section, setSection] = useState<SettingsSectionId>("general");
   const [threshold, setThreshold] = useState(settings.threshold);
   const timerRef = useRef<number | null>(null);
   const systemTheme = useSystemTheme();
+  const zh = locale === "zh";
 
   useEffect(() => {
     setThreshold(settings.threshold);
@@ -403,169 +439,303 @@ export function SettingsDialog({
     onClose();
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
+  const sections: Array<{
+    id: SettingsSectionId;
+    label: string;
+    hint: string;
+  }> = [
+    {
+      id: "general",
+      label: zh ? "通用" : "General",
+      hint: zh ? "语言与外观" : "Language and appearance"
+    },
+    {
+      id: "matrix",
+      label: zh ? "矩阵" : "Matrix",
+      hint: zh ? "象限划分规则" : "How quadrants are split"
+    },
+    {
+      id: "tags",
+      label: zh ? "标签" : "Tags",
+      hint: zh ? "管理已有标签" : "Manage your tags"
+    },
+    {
+      id: "about",
+      label: zh ? "关于与帮助" : "About",
+      hint: zh ? "版本、存储与功能介绍" : "Version, storage and the guide"
+    }
+  ];
+
+  const active = sections.find((item) => item.id === section) ?? sections[0];
+
+  const themeLabel = (value: Theme) =>
+    value === "light"
+      ? zh
+        ? "浅色"
+        : "Light"
+      : value === "dark"
+        ? zh
+          ? "深色"
+          : "Dark"
+        : zh
+          ? "跟随系统"
+          : "System";
+
+  const QUAD_SPLIT = ([1, 2, 3, 4] as const).map((quadrant) => {
+    const name = zh
+      ? (() => {
+          const full =
+            translations.zh[`q${quadrant}Name` as keyof typeof translations.zh];
+          return typeof full === "string" ? full.split(" (")[0] : "";
+        })()
+      : QUADRANTS[quadrant].name;
+    const high = `≥ ${threshold}`;
+    const low = `< ${threshold}`;
+    const importance = quadrant === 1 || quadrant === 2 ? high : low;
+    const urgency = quadrant === 1 || quadrant === 3 ? high : low;
+    return {
+      quadrant,
+      name,
+      rule: zh
+        ? `重要度 ${importance} · 紧迫度 ${urgency}`
+        : `I ${importance} · U ${urgency}`
+    };
+  });
+
   return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
-    >
+    <div className="ds-overlay">
+      <div className="ds-mask" onMouseDown={close} aria-hidden="true" />
       <div
-        className="modal wide"
+        className="ds-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Settings"
+        aria-label={zh ? "设置" : "Settings"}
       >
-        <div className="modal-header">
-          <div>
-            <h2>{locale === "zh" ? "系统设置" : "Settings"}</h2>
-            <p>{locale === "zh" ? "象限阈值与主题模式保存在本地数据库中。" : "Thresholds and themes are saved locally in your database."}</p>
-          </div>
-          <button className="drawer-close" onClick={close} aria-label="Close">
-            ×
-          </button>
-        </div>
-
-        <div className="field">
-          <label>{locale === "zh" ? "界面语言" : "Language"}</label>
-          <div className="recurrence-pills" role="radiogroup" aria-label="Language">
-            <button
-              type="button"
-              className={`rec-pill${locale === "zh" ? " active" : ""}`}
-              role="radio"
-              aria-checked={locale === "zh"}
-              onClick={() => {
-                if (locale !== "zh") onToggleLocale();
-              }}
-            >
-              中文
-            </button>
-            <button
-              type="button"
-              className={`rec-pill${locale === "en" ? " active" : ""}`}
-              role="radio"
-              aria-checked={locale === "en"}
-              onClick={() => {
-                if (locale !== "en") onToggleLocale();
-              }}
-            >
-              English
-            </button>
-          </div>
-        </div>
-
-        <div className="field threshold-field">
-          <div className="field-head">
-            <label htmlFor="settings-threshold">
-              {locale === "zh" ? "象限划分阈值" : "Quadrant threshold"}
-            </label>
-            <output htmlFor="settings-threshold">{threshold}</output>
-          </div>
-          <input
-            id="settings-threshold"
-            type="range"
-            min={30}
-            max={70}
-            step={1}
-            value={threshold}
-            onChange={(event) =>
-              changeThreshold(Number(event.target.value))
-            }
-          />
-          <div className="range-labels">
-            <span>30</span>
-            <span>50</span>
-            <span>70</span>
-          </div>
-          <p className="hint">
-            {locale === "zh"
-              ? "重要度或紧迫度恰好等于阈值的任务将被归类为待评估 (Pending review)。"
-              : "A task exactly on the threshold is shown as Pending review."}
-          </p>
-        </div>
-
-        <div className="field">
-          <label>{locale === "zh" ? "主题外观" : "Theme"}</label>
-          <div className="theme-switch">
-            {THEME_OPTIONS.map((option) => (
+        <aside className="ds-nav">
+          <div className="ds-nav-title">{zh ? "设置" : "Settings"}</div>
+          <nav className="ds-nav-list">
+            {sections.map((item) => (
               <button
-                key={option.value}
-                className={`theme-btn${
-                  settings.theme === option.value ? " active" : ""
-                }`}
-                onClick={() => onUpdateSettings({ theme: option.value })}
+                key={item.id}
+                className={`ds-nav-cell${item.id === section ? " is-active" : ""}`}
+                aria-current={item.id === section ? "page" : undefined}
+                onClick={() => setSection(item.id)}
               >
-                <span className="theme-swatch">
-                  {option.swatches.map((color) => (
-                    <i key={color} style={{ background: color }} />
-                  ))}
+                <span className="ds-nav-icon" aria-hidden="true">
+                  {SETTINGS_ICONS[item.id]}
                 </span>
-                <strong>
-                  {locale === "zh"
-                    ? option.value === "light"
-                      ? "浅色 (Light)"
-                      : option.value === "dark"
-                        ? "深色 (Dark)"
-                        : "跟随系统 (System)"
-                    : option.label}
-                </strong>
-                <span>
-                  {option.value === "system"
-                    ? (locale === "zh"
-                        ? `跟随设备 · ${systemTheme === "dark" ? "深色" : "浅色"}`
-                        : `Your device · ${systemTheme}`)
-                    : (locale === "zh"
-                        ? (option.value === "light"
-                            ? "柔和明亮，清爽通透"
-                            : "低对比度，沉浸护眼")
-                        : option.description)}
-                </span>
+                <span className="ds-nav-label">{item.label}</span>
               </button>
             ))}
-          </div>
-          {settings.theme === "system" && (
-            <p className="hint">
-              {locale === "zh"
-                ? `跟随系统外观 — 当前为${systemTheme === "dark" ? "深色" : "浅色"}。`
-                : `Following the system color scheme — currently ${systemTheme}.`}
-            </p>
-          )}
-        </div>
+          </nav>
+        </aside>
 
-        <div className="field">
-          <label>Tags</label>
-          <div className="tag-manager">
-            {tags.map((tag) => (
-              <div className="tag-manager-row" key={tag.id}>
-                <span className="tag-manager-name">
-                  <i style={{ background: tag.color }} />
-                  {tag.name}
-                </span>
-                <button
-                  className="danger-link"
-                  onClick={() => onDeleteTag(tag)}
+        <div className="ds-content">
+          <header className="ds-header">
+            <div className="ds-heading">
+              <h2>{active.label}</h2>
+              <p>{active.hint}</p>
+            </div>
+            <button className="ds-close" onClick={close} aria-label={zh ? "关闭" : "Close"}>
+              ×
+            </button>
+          </header>
+
+          <div className="ds-body">
+            {section === "general" && (
+              <div className="ds-rows">
+                <SettingsRow
+                  label={zh ? "界面语言" : "Language"}
+                  desc={zh ? "切换后所有界面文案立即更新。" : "Applies across the app right away."}
                 >
-                  Delete
-                </button>
+                  <div className="ds-seg" role="group" aria-label="Language">
+                    <button
+                      className={locale === "zh" ? "is-active" : ""}
+                      aria-pressed={locale === "zh"}
+                      onClick={() => {
+                        if (locale !== "zh") onToggleLocale();
+                      }}
+                    >
+                      中文
+                    </button>
+                    <button
+                      className={locale === "en" ? "is-active" : ""}
+                      aria-pressed={locale === "en"}
+                      onClick={() => {
+                        if (locale !== "en") onToggleLocale();
+                      }}
+                    >
+                      English
+                    </button>
+                  </div>
+                </SettingsRow>
+
+                <SettingsRow
+                  label={zh ? "主题外观" : "Theme"}
+                  desc={
+                    settings.theme === "system"
+                      ? zh
+                        ? `跟随系统 · 当前为${systemTheme === "dark" ? "深色" : "浅色"}`
+                        : `Following the system · currently ${systemTheme}`
+                      : zh
+                        ? "选择固定的浅色或深色配色。"
+                        : "Pin the interface to light or dark."
+                  }
+                >
+                  <div className="ds-seg" role="group" aria-label="Theme">
+                    {THEME_VALUES.map((value) => (
+                      <button
+                        key={value}
+                        className={settings.theme === value ? "is-active" : ""}
+                        aria-pressed={settings.theme === value}
+                        onClick={() => onUpdateSettings({ theme: value })}
+                      >
+                        {themeLabel(value)}
+                      </button>
+                    ))}
+                  </div>
+                </SettingsRow>
               </div>
-            ))}
-            {!tags.length && (
-              <p className="hint" style={{ marginTop: 0 }}>
-                No tags yet. Create them from a task detail panel.
-              </p>
+            )}
+
+            {section === "matrix" && (
+              <div className="ds-rows">
+                <SettingsRow
+                  stacked
+                  label={zh ? "象限阈值" : "Quadrant threshold"}
+                  desc={
+                    zh
+                      ? "重要度或紧迫度高于阈值的任务进入「重要 / 紧迫」一侧。恰好等于阈值的任务标记为待评估。"
+                      : "Scores above the threshold count as important or urgent. Values exactly on it are flagged for review."
+                  }
+                >
+                  <div className="ds-slider-row">
+                    <input
+                      id="settings-threshold"
+                      type="range"
+                      min={30}
+                      max={70}
+                      step={1}
+                      value={threshold}
+                      aria-label={zh ? "象限阈值" : "Quadrant threshold"}
+                      onChange={(event) => changeThreshold(Number(event.target.value))}
+                    />
+                    <output htmlFor="settings-threshold">{threshold}</output>
+                  </div>
+                  <div className="ds-slider-ticks">
+                    <span>30</span>
+                    <span>50</span>
+                    <span>70</span>
+                  </div>
+                </SettingsRow>
+
+                <SettingsRow
+                  stacked
+                  label={zh ? "当前分档" : "Current split"}
+                  desc={
+                    zh
+                      ? "按当前阈值，四个象限的判定条件如下，卡片的颜色与形态随之一致。"
+                      : "With this threshold each quadrant is resolved as follows — card colour and shape follow the same rule."
+                  }
+                >
+                  <div className="ds-quad-list">
+                    {QUAD_SPLIT.map(({ quadrant, name, rule }) => (
+                      <div className={`ds-quad q${quadrant}`} key={quadrant}>
+                        <i aria-hidden="true" />
+                        <div>
+                          <b>{name}</b>
+                          <span>{rule}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </SettingsRow>
+              </div>
+            )}
+
+            {section === "tags" && (
+              <div className="ds-rows">
+                <SettingsRow
+                  stacked
+                  label={zh ? "标签" : "Tags"}
+                  desc={zh ? "标签在任务抽屉里创建，这里可以删除不再使用的标签。" : "Tags are created inside a task drawer; delete the ones you no longer use here."}
+                >
+                  <div className="ds-tag-list">
+                    {tags.map((tag) => (
+                      <div className="ds-tag-row" key={tag.id}>
+                        <span className="ds-tag-name">
+                          <i style={{ background: tag.color }} />
+                          {tag.name}
+                        </span>
+                        <button className="ds-link danger" onClick={() => onDeleteTag(tag)}>
+                          {zh ? "删除" : "Delete"}
+                        </button>
+                      </div>
+                    ))}
+                    {!tags.length && (
+                      <p className="ds-empty">
+                        {zh ? "还没有标签。打开任一任务，在标签一栏新建。" : "No tags yet. Open a task and add one in the tags field."}
+                      </p>
+                    )}
+                  </div>
+                </SettingsRow>
+              </div>
+            )}
+
+            {section === "about" && (
+              <div className="ds-rows">
+                <SettingsRow
+                  label={zh ? "功能介绍" : "Feature guide"}
+                  desc={zh ? "图文介绍矩阵、双空间、日历排期与快捷键。" : "A visual tour of the matrix, layouts, calendar and shortcuts."}
+                >
+                  <button className="ds-btn" onClick={onOpenGuide}>
+                    {zh ? "查看介绍" : "Open guide"}
+                    <span aria-hidden="true">→</span>
+                  </button>
+                </SettingsRow>
+
+                <SettingsRow
+                  label={zh ? "版本" : "Version"}
+                  desc={zh ? "当前安装的版本号。" : "Installed version."}
+                >
+                  <span className="ds-value">0.1.0</span>
+                </SettingsRow>
+
+                <SettingsRow
+                  label={zh ? "数据存储" : "Storage"}
+                  desc={zh ? "任务保存在本机，不会上传到任何服务器。" : "Tasks stay on this machine and are never uploaded."}
+                >
+                  <span className="ds-value">{zh ? "本机数据库" : "Local database"}</span>
+                </SettingsRow>
+
+                <SettingsRow
+                  label={zh ? "快捷键" : "Shortcuts"}
+                  desc={zh ? "不离开键盘的常用操作。" : "The frequent moves, without the mouse."}
+                >
+                  <div className="ds-keys">
+                    <kbd>N</kbd>
+                    <kbd>/</kbd>
+                    <kbd>↑↓←→</kbd>
+                    <kbd>Esc</kbd>
+                  </div>
+                </SettingsRow>
+              </div>
             )}
           </div>
-        </div>
-
-        <div className="modal-actions">
-          <button className="btn" onClick={close}>
-            Done
-          </button>
         </div>
       </div>
     </div>
   );
 }
+
 
 interface ConfirmDialogProps {
   title: string;
