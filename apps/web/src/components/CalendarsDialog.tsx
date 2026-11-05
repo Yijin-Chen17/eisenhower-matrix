@@ -1,12 +1,13 @@
-import { useState, type ChangeEvent } from "react";
-import { isStaticDataMode } from "../api";
+import { useMemo, useState, type ChangeEvent } from "react";
+import { CALENDAR_PALETTE, type CalendarSubscription } from "@eisenhower/shared";
 import {
   useCalendars,
   useCreateCalendar,
   useDeleteCalendar,
   useImportCalendar,
   useRefreshAllCalendars,
-  useRefreshCalendar
+  useRefreshCalendar,
+  useUpdateCalendar
 } from "../hooks";
 
 interface CalendarsDialogProps {
@@ -26,23 +27,62 @@ function formatSync(iso: string | null): string {
   })}`;
 }
 
+function sameColor(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+function ColorPicker({
+  value,
+  onChange,
+  label
+}: {
+  value: string;
+  onChange: (color: string) => void;
+  label: string;
+}) {
+  return (
+    <div className="cal-color-row" role="radiogroup" aria-label={label}>
+      {CALENDAR_PALETTE.map((color) => (
+        <button
+          key={color}
+          type="button"
+          role="radio"
+          aria-checked={sameColor(value, color)}
+          aria-label={`Use ${color}`}
+          className={`cal-color-dot${sameColor(value, color) ? " active" : ""}`}
+          style={{ background: color }}
+          onClick={() => onChange(color)}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function CalendarsDialog({ onClose, onError }: CalendarsDialogProps) {
   const calendarsQuery = useCalendars();
   const calendars = calendarsQuery.data ?? [];
   const createCalendar = useCreateCalendar();
   const importCalendar = useImportCalendar();
+  const updateCalendar = useUpdateCalendar();
   const deleteCalendar = useDeleteCalendar();
   const refreshCalendar = useRefreshCalendar();
   const refreshAll = useRefreshAllCalendars();
 
-  const proxyUrl = import.meta.env.VITE_CALENDAR_PROXY_URL?.trim() ?? "";
-  const showUrl = !isStaticDataMode || Boolean(proxyUrl);
+  const nextColor = useMemo(() => {
+    const used = new Set(calendars.map((calendar) => calendar.color.toLowerCase()));
+    return (
+      CALENDAR_PALETTE.find((color) => !used.has(color.toLowerCase())) ??
+      CALENDAR_PALETTE[calendars.length % CALENDAR_PALETTE.length]!
+    );
+  }, [calendars]);
 
-  const [mode, setMode] = useState<AddMode>(showUrl ? "url" : "file");
+  const [mode, setMode] = useState<AddMode>("url");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [ics, setIcs] = useState("");
   const [fileName, setFileName] = useState("");
+  const [color, setColor] = useState<string>(nextColor);
+  const [colorFor, setColorFor] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -85,28 +125,24 @@ export function CalendarsDialog({ onClose, onError }: CalendarsDialogProps) {
           setError("Paste a calendar subscription URL.");
           return;
         }
-        if (isStaticDataMode && !proxyUrl) {
-          setError(
-            "URL subscriptions are not configured on this site. Upload an .ics file instead."
-          );
-          return;
-        }
-        await createCalendar.mutateAsync({
+        const calendar = await createCalendar.mutateAsync({
           name: nextName,
           url: url.trim(),
-          proxyUrl: isStaticDataMode ? proxyUrl : undefined
+          color
         });
         setUrl("");
+        if (calendar.lastError) onError(calendar.lastError);
       } else {
         if (!ics) {
           setError("Choose an .ics file first.");
           return;
         }
-        await importCalendar.mutateAsync({ name: nextName, ics });
+        await importCalendar.mutateAsync({ name: nextName, ics, color });
         setIcs("");
         setFileName("");
       }
       setName("");
+      setColor(nextColor);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not add calendar"
@@ -116,10 +152,25 @@ export function CalendarsDialog({ onClose, onError }: CalendarsDialogProps) {
     }
   }
 
+  function recolor(calendar: CalendarSubscription, next: string) {
+    setColorFor(null);
+    updateCalendar.mutate(
+      { id: calendar.id, patch: { color: next } },
+      {
+        onError: (caught) =>
+          onError(
+            caught instanceof Error ? caught.message : "Could not update calendar"
+          )
+      }
+    );
+  }
+
   function remove(id: string) {
     deleteCalendar.mutate(id, {
       onError: (caught) =>
-        onError(caught instanceof Error ? caught.message : "Could not delete calendar")
+        onError(
+          caught instanceof Error ? caught.message : "Could not delete calendar"
+        )
     });
   }
 
@@ -172,7 +223,9 @@ export function CalendarsDialog({ onClose, onError }: CalendarsDialogProps) {
 
         <div className="cal-dialog-list">
           <div className="cal-dialog-list-head">
-            <span>{calendars.length} calendar{calendars.length === 1 ? "" : "s"}</span>
+            <span>
+              {calendars.length} calendar{calendars.length === 1 ? "" : "s"}
+            </span>
             {calendars.some((calendar) => calendar.sourceType === "url") && (
               <button
                 className="small-btn"
@@ -189,75 +242,92 @@ export function CalendarsDialog({ onClose, onError }: CalendarsDialogProps) {
           ) : (
             calendars.map((calendar) => (
               <div className="cal-sub" key={calendar.id}>
-                <i style={{ background: calendar.color }} aria-hidden="true" />
-                <div className="cal-sub-copy">
-                  <strong>{calendar.name}</strong>
-                  <span>
-                    {calendar.sourceType === "url"
-                      ? calendar.url
-                      : "Uploaded .ics file"}
-                  </span>
-                  {calendar.lastError ? (
-                    <span className="cal-sub-error">{calendar.lastError}</span>
-                  ) : (
-                    <span className="cal-sub-sync">
-                      {formatSync(calendar.lastFetchedAt)}
-                    </span>
-                  )}
-                </div>
-                {calendar.sourceType === "url" && (
+                <div className="cal-sub-main">
                   <button
-                    className="small-btn"
-                    onClick={() => void refreshOne(calendar.id)}
-                    disabled={refreshCalendar.isPending}
+                    type="button"
+                    className={`cal-sub-dot${
+                      colorFor === calendar.id ? " open" : ""
+                    }`}
+                    style={{ background: calendar.color }}
+                    onClick={() =>
+                      setColorFor(colorFor === calendar.id ? null : calendar.id)
+                    }
+                    aria-label={`Change the color of ${calendar.name}`}
+                    aria-expanded={colorFor === calendar.id}
+                    title="Change color"
+                  />
+                  <div className="cal-sub-copy">
+                    <strong>{calendar.name}</strong>
+                    <span>
+                      {calendar.sourceType === "url"
+                        ? calendar.url
+                        : "Uploaded .ics file"}
+                    </span>
+                    {calendar.lastError ? (
+                      <span className="cal-sub-error">{calendar.lastError}</span>
+                    ) : (
+                      <span className="cal-sub-sync">
+                        {formatSync(calendar.lastFetchedAt)}
+                      </span>
+                    )}
+                  </div>
+                  {calendar.sourceType === "url" && (
+                    <button
+                      className="small-btn"
+                      onClick={() => void refreshOne(calendar.id)}
+                      disabled={refreshCalendar.isPending}
+                    >
+                      Refresh
+                    </button>
+                  )}
+                  <button
+                    className="cal-sub-delete"
+                    onClick={() => remove(calendar.id)}
+                    aria-label={`Delete ${calendar.name}`}
                   >
-                    Refresh
+                    Delete
                   </button>
+                </div>
+
+                {colorFor === calendar.id && (
+                  <div className="cal-sub-colors">
+                    <ColorPicker
+                      label={`Color for ${calendar.name}`}
+                      value={calendar.color}
+                      onChange={(next) => recolor(calendar, next)}
+                    />
+                  </div>
                 )}
-                <button
-                  className="cal-sub-delete"
-                  onClick={() => remove(calendar.id)}
-                  aria-label={`Delete ${calendar.name}`}
-                >
-                  Delete
-                </button>
               </div>
             ))
           )}
         </div>
 
         <div className="cal-dialog-add">
-          {showUrl ? (
-            <div className="cal-add-tabs" role="tablist" aria-label="Add calendar">
-              <button
-                className={mode === "url" ? "active" : ""}
-                role="tab"
-                aria-selected={mode === "url"}
-                onClick={() => {
-                  setMode("url");
-                  setError("");
-                }}
-              >
-                Subscribe to URL
-              </button>
-              <button
-                className={mode === "file" ? "active" : ""}
-                role="tab"
-                aria-selected={mode === "file"}
-                onClick={() => {
-                  setMode("file");
-                  setError("");
-                }}
-              >
-                Upload .ics
-              </button>
-            </div>
-          ) : (
-            <p className="hint">
-              URL subscriptions are not configured on this site. Upload an .ics
-              file instead.
-            </p>
-          )}
+          <div className="cal-add-tabs" role="tablist" aria-label="Add calendar">
+            <button
+              className={mode === "url" ? "active" : ""}
+              role="tab"
+              aria-selected={mode === "url"}
+              onClick={() => {
+                setMode("url");
+                setError("");
+              }}
+            >
+              Subscribe to URL
+            </button>
+            <button
+              className={mode === "file" ? "active" : ""}
+              role="tab"
+              aria-selected={mode === "file"}
+              onClick={() => {
+                setMode("file");
+                setError("");
+              }}
+            >
+              Upload .ics
+            </button>
+          </div>
 
           <div className="field">
             <label htmlFor="cal-name">Name</label>
@@ -271,24 +341,32 @@ export function CalendarsDialog({ onClose, onError }: CalendarsDialogProps) {
             />
           </div>
 
+          <div className="field">
+            <label>Color</label>
+            <ColorPicker
+              label="Calendar color"
+              value={color}
+              onChange={setColor}
+            />
+          </div>
+
           {mode === "url" ? (
-            <>
-              <div className="field">
-                <label htmlFor="cal-url">Calendar URL</label>
-                <input
-                  id="cal-url"
-                  className="text-input"
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  placeholder="webcal://… or https://…"
-                  spellCheck={false}
-                />
-                <p className="hint">
-                  For iCloud, publish the calendar and use the public link —
-                  private calendars are not supported.
-                </p>
-              </div>
-            </>
+            <div className="field">
+              <label htmlFor="cal-url">Calendar URL</label>
+              <input
+                id="cal-url"
+                className="text-input"
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                placeholder="webcal://… or https://…"
+                spellCheck={false}
+              />
+              <p className="hint">
+                For iCloud, publish the calendar and use the public link —
+                private calendars are not supported. The link is fetched
+                directly by this app.
+              </p>
+            </div>
           ) : (
             <div className="field">
               <label htmlFor="cal-file">.ics file</label>
@@ -312,7 +390,9 @@ export function CalendarsDialog({ onClose, onError }: CalendarsDialogProps) {
             <button
               className="btn primary"
               onClick={() => void submit()}
-              disabled={busy || createCalendar.isPending || importCalendar.isPending}
+              disabled={
+                busy || createCalendar.isPending || importCalendar.isPending
+              }
             >
               {busy || createCalendar.isPending || importCalendar.isPending
                 ? "Adding…"

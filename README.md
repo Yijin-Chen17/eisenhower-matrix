@@ -14,10 +14,10 @@ The app is a single-user local full stack: React + Vite in the browser, Hono + S
 - **Organization**: due dates with overdue/today/soon states, tags, title/notes search, tag filtering (OR).
 - **Quadrant focus**: pick a quadrant from the top bar, or click its label on the matrix, to see all of its tasks with a List/Map toggle. Map keeps the spatial importance/urgency layout.
 - **Calendar**: week view with read-only ICS subscriptions/imports, task time blocks, a separate Due column, and overlap highlighting.
-- **Views**: In progress matrix; Completed and Archived lists.
+- **Views**: a collapsible left sidebar switches between the In progress matrix, the Calendar week view, and the Completed / Archived lists. Settings sits at the bottom of the sidebar; the rail remembers whether it was collapsed.
 - **Undo**: completing or archiving a task shows a 5-second undo toast.
 - **Keyboard**: `n` adds a task, `/` focuses search, `Esc` closes overlays, arrow keys nudge a focused card/dot (Shift for ±10).
-- **Themes**: Graphite (dark) and Fog (soft gray), persisted in SQLite.
+- **Themes**: Light, Dark, or follow the system color scheme (live via `prefers-color-scheme`), persisted in SQLite.
 - **Backup**: `npm run backup` writes a consistent SQLite backup with a timestamp.
 
 ## Requirements
@@ -95,30 +95,13 @@ The preview runs at `http://localhost:4173/eisenhower-matrix/`.
 
 Open the **Calendar** tab to see a Sunday-first week view (07:00–24:00). Tasks with a schedule appear as time blocks; tasks with a due date appear in the separate Due column. Overlapping items are highlighted, and the task drawer lists the conflicts.
 
-External calendars are read-only. In the local app you can subscribe to a public ICS URL; both versions can import an exported `.ics` file.
+External calendars are read-only. Subscribe to a public ICS URL or import an exported `.ics` file. Every calendar gets its own color, which you can change at any time in the Calendars dialog.
 
 - **iCloud**: publish the calendar (Public Calendar), copy the `webcal://` link; the app converts it to `https://`. Private iCloud calendars are not supported.
 - **Google/Outlook**: use the secret/public iCal URL or published ICS link.
 - The subscription URL is effectively a password. It is stored only in your local SQLite database or browser storage.
 
-### GitHub Pages URL subscriptions
-
-Browsers cannot fetch arbitrary calendar URLs because of CORS. The Pages build uses the small Cloudflare Worker in `workers/calendar-proxy`:
-
-1. Change `ALLOWED_ORIGINS` in `workers/calendar-proxy/wrangler.toml` to your Pages origin.
-2. Deploy it:
-   ```bash
-   cd workers/calendar-proxy
-   npm install
-   npm run deploy
-   ```
-3. Add a repository **Actions variable** named `CALENDAR_PROXY_URL` with the Worker URL (**Settings → Secrets and variables → Actions → Variables**), then re-run the Pages deployment. The build reads it as `VITE_CALENDAR_PROXY_URL`.
-
-If `CALENDAR_PROXY_URL` is not set, the Pages version only offers `.ics` upload; there is no Proxy URL field in the UI.
-
-For automatic Worker deploys, add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `.github/workflows/deploy-calendar-proxy.yml` deploys changes under `workers/calendar-proxy`.
-
-Uploaded `.ics` files work on Pages without the proxy.
+The app fetches subscription URLs directly — there is no proxy worker. In the local app the server downloads the feed; in the browser-only Pages build the request goes straight from your browser, so the provider must allow cross-origin reads (CORS). Providers that do not (many Google and Outlook links) cannot be subscribed to on Pages; export an `.ics` file and upload it instead.
 
 ## Data
 
@@ -200,6 +183,7 @@ DELETE /api/tags/:id
 GET    /api/calendar/subscriptions
 POST   /api/calendar/subscriptions
 POST   /api/calendar/import
+PATCH  /api/calendar/subscriptions/:id
 POST   /api/calendar/subscriptions/:id/refresh
 POST   /api/calendar/refresh
 DELETE /api/calendar/subscriptions/:id

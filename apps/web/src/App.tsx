@@ -2,7 +2,8 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  type ReactNode
 } from "react";
 import {
   DEFAULT_SETTINGS,
@@ -25,6 +26,7 @@ import { QuadrantFocus } from "./components/QuadrantFocus";
 import type { QuadrantViewMode } from "./components/QuadrantFocus";
 import { TaskDrawer } from "./components/TaskDrawer";
 import { TaskLists } from "./components/TaskLists";
+import { Select } from "./components/Select";
 import {
   useCreateTag,
   useCreateTask,
@@ -39,6 +41,7 @@ import {
   useUpdateTask
 } from "./hooks";
 import { localDayRange, overlaps } from "./lib/calendar";
+import { applyTheme, resolveTheme, useSystemTheme } from "./lib/theme";
 
 interface ToastState {
   message: string;
@@ -46,6 +49,75 @@ interface ToastState {
 }
 
 type AppView = TaskView | "calendar";
+
+interface NavItem {
+  view: AppView;
+  label: string;
+  icon: ReactNode;
+  count?: "active" | "completed" | "archived";
+}
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    view: "active",
+    label: "In progress",
+    count: "active",
+    icon: (
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round">
+        <rect x="3" y="3" width="7.5" height="7.5" rx="1.6" />
+        <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6" />
+        <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6" />
+        <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6" />
+      </svg>
+    )
+  },
+  {
+    view: "completed",
+    label: "Completed",
+    count: "completed",
+    icon: (
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <path d="m8.4 12.4 2.6 2.6 4.6-5.2" />
+      </svg>
+    )
+  },
+  {
+    view: "archived",
+    label: "Archived",
+    count: "archived",
+    icon: (
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="4.4" rx="1.2" />
+        <path d="M5 8.4V19a1.4 1.4 0 0 0 1.4 1.4h11.2A1.4 1.4 0 0 0 19 19V8.4" />
+        <path d="M10 12.4h4" />
+      </svg>
+    )
+  },
+  {
+    view: "calendar",
+    label: "Calendar",
+    icon: (
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5" width="18" height="16" rx="2.4" />
+        <path d="M8 3v4M16 3v4M3 10.5h18" />
+      </svg>
+    )
+  }
+];
+
+function BrandMark() {
+  return (
+    <div className="brand-mark" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
+const SIDEBAR_KEY = "eisenhower.sidebarCollapsed";
 
 export default function App() {
   const [view, setView] = useState<AppView>("active");
@@ -66,6 +138,14 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem(SIDEBAR_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const toastTimer = useRef<number | null>(null);
@@ -86,6 +166,8 @@ export default function App() {
 
   const settings: Settings = settingsQuery.data ?? DEFAULT_SETTINGS;
   const tags = tagsQuery.data ?? [];
+  const systemTheme = useSystemTheme();
+  const resolvedTheme = resolveTheme(settings.theme, systemTheme);
 
   const tasks =
     view === "active" || view === "calendar"
@@ -197,8 +279,16 @@ export default function App() {
   }, [selectedTask, conflictEventsQuery.data, activeQuery.data]);
 
   useEffect(() => {
-    document.body.dataset.theme = settings.theme;
-  }, [settings.theme]);
+    applyTheme(resolvedTheme, settings.theme);
+  }, [resolvedTheme, settings.theme]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? "1" : "0");
+    } catch {
+      // Ignore storage failures (private mode, quota, etc.).
+    }
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (selectedId && !activeQuery.data?.some((task) => task.id === selectedId)) {
@@ -291,6 +381,10 @@ export default function App() {
 
   function pushError(error: unknown) {
     showToast(error instanceof Error ? error.message : "Something went wrong");
+  }
+
+  function showError(message: string) {
+    showToast(message);
   }
 
   function handleSelect(task: Task) {
@@ -480,255 +574,312 @@ export default function App() {
       : "Try another search or clear the filters.";
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
+    <div className={`app-frame${sidebarCollapsed ? " is-collapsed" : ""}`}>
+      <aside
+        className={`sidebar${sidebarOpen ? " open" : ""}`}
+      >
+        <div className="sidebar-head">
+          <div className="brand">
+            {sidebarCollapsed ? (
+              <button
+                className="brand-mark-button"
+                onClick={() => setSidebarCollapsed(false)}
+                title="Expand sidebar"
+                aria-label="Expand sidebar"
+                aria-expanded={false}
+              >
+                <BrandMark />
+              </button>
+            ) : (
+              <BrandMark />
+            )}
+            <div className="brand-copy">
+              <h1>Eisenhower Matrix</h1>
+            </div>
           </div>
-          <div>
-            <h1>Eisenhower Matrix</h1>
-            <p>Local priority board</p>
-          </div>
-        </div>
 
-        <label className="search">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          <input
-            ref={searchRef}
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search tasks…"
-            aria-label="Search tasks"
-          />
-        </label>
-
-        <div className="tabs" role="tablist" aria-label="Views">
           <button
-            className={`tab${view === "active" ? " active" : ""}`}
-            role="tab"
-            aria-selected={view === "active"}
-            onClick={() => changeView("active")}
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed(true)}
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+            aria-expanded
           >
-            In progress <span className="count">{counts.active}</span>
-          </button>
-          <button
-            className={`tab${view === "calendar" ? " active" : ""}`}
-            role="tab"
-            aria-selected={view === "calendar"}
-            onClick={() => changeView("calendar")}
-          >
-            Calendar
-          </button>
-          <button
-            className={`tab${view === "completed" ? " active" : ""}`}
-            role="tab"
-            aria-selected={view === "completed"}
-            onClick={() => changeView("completed")}
-          >
-            Completed <span className="count">{counts.completed}</span>
-          </button>
-          <button
-            className={`tab${view === "archived" ? " active" : ""}`}
-            role="tab"
-            aria-selected={view === "archived"}
-            onClick={() => changeView("archived")}
-          >
-            Archived <span className="count">{counts.archived}</span>
-          </button>
-        </div>
-
-        {view === "active" && (
-          <label
-            className={`quad-select${focusQuadrant ? ` active q${focusQuadrant}` : ""}`}
-            title="Focus a quadrant"
-          >
-            <span className="quad-select-mark" aria-hidden="true" />
-            <select
-              aria-label="Focus quadrant"
-              value={focusQuadrant === null ? "" : String(focusQuadrant)}
-              onChange={(event) => {
-                const value = event.target.value;
-                changeFocus(
-                  value === "" ? null : (Number(value) as KnownQuadrant)
-                );
-              }}
-            >
-              <option value="">All quadrants</option>
-              {([1, 2, 3, 4] as const).map((quadrant) => (
-                <option key={quadrant} value={quadrant}>
-                  {QUADRANTS[quadrant].name} · {quadrantCounts[quadrant]}
-                </option>
-              ))}
-            </select>
             <svg
-              viewBox="0 0 16 16"
-              width="12"
-              height="12"
+              viewBox="0 0 24 24"
+              width="15"
+              height="15"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.6"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
               aria-hidden="true"
             >
-              <path
-                d="m4 6 4 4 4-4"
+              <path d="m14 6-6 6 6 6" />
+            </svg>
+          </button>
+        </div>
+
+        <nav className="sidebar-nav" aria-label="Views">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.view}
+              className={`nav-item${view === item.view ? " active" : ""}`}
+              aria-current={view === item.view ? "page" : undefined}
+              title={sidebarCollapsed ? item.label : undefined}
+              onClick={() => {
+                changeView(item.view);
+                setSidebarOpen(false);
+              }}
+            >
+              <span className="nav-icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span className="nav-label">{item.label}</span>
+              {item.count !== undefined && (
+                <span className="nav-count">{counts[item.count]}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-foot">
+          <button
+            className="nav-item"
+            title={sidebarCollapsed ? "Settings" : undefined}
+            aria-label="Settings"
+            onClick={() => {
+              setSettingsOpen(true);
+              setSidebarOpen(false);
+            }}
+          >
+            <span className="nav-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                width="17"
+                height="17"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-              />
-            </svg>
-          </label>
-        )}
-
-        <button className="add-btn" onClick={() => setAddOpen(true)}>
-          + Add task
-        </button>
-        <button
-          className="icon-btn"
-          title="Settings"
-          aria-label="Settings"
-          onClick={() => setSettingsOpen(true)}
-        >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </button>
-      </header>
-
-      <div className="filterbar">
-        {tags.length > 0 ? (
-          <>
-            <span className="filter-label">Tags</span>
-            {tags.map((tag) => {
-              const active = selectedTagIds.includes(tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  className={`tag-chip${active ? " active" : ""}`}
-                  onClick={() => handleToggleTag(tag.id)}
-                  aria-pressed={active}
-                >
-                  <i style={{ background: tag.color }} />
-                  {tag.name}
-                </button>
-              );
-            })}
-          </>
-        ) : (
-          <span className="filter-empty">
-            No tags yet — add them from a task.
-          </span>
-        )}
-        {pendingCount > 0 && (
-          <span className="pending-pill">
-            Pending review {pendingCount}
-          </span>
-        )}
-        <span className="filter-spacer" />
-        {isFiltering && (
-          <button className="clear-filter" onClick={clearFilters}>
-            Clear filters
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </span>
+            <span className="nav-label">Settings</span>
           </button>
-        )}
-      </div>
+        </div>
+      </aside>
 
-      <main
-        className={`workspace${selectedTask ? " has-drawer" : ""}`}
-      >
-        {view === "active" ? (
-          focusQuadrant === null ? (
-            <Matrix
+      {sidebarOpen && (
+        <div
+          className="sidebar-scrim"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <div className="app-main">
+        <header className="topbar">
+          <button
+            className="icon-btn mobile-menu"
+            aria-label="Open navigation"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          </button>
+
+          <label className="search">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              ref={searchRef}
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search tasks…"
+              aria-label="Search tasks"
+            />
+          </label>
+
+          <span className="topbar-spacer" />
+
+          <button className="add-btn" onClick={() => setAddOpen(true)}>
+            + Add task
+          </button>
+        </header>
+
+        <div className="filterbar">
+          {tags.length > 0 ? (
+            <>
+              <span className="filter-label">Tags</span>
+              {tags.map((tag) => {
+                const active = selectedTagIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    className={`tag-chip${active ? " active" : ""}`}
+                    onClick={() => handleToggleTag(tag.id)}
+                    aria-pressed={active}
+                  >
+                    <i style={{ background: tag.color }} />
+                    {tag.name}
+                  </button>
+                );
+              })}
+            </>
+          ) : (
+            <span className="filter-empty">
+              No tags yet — add them from a task.
+            </span>
+          )}
+          {pendingCount > 0 && (
+            <span className="pending-pill">
+              Pending review {pendingCount}
+            </span>
+          )}
+          <span className="filter-spacer" />
+          {isFiltering && (
+            <button className="clear-filter" onClick={clearFilters}>
+              Clear filters
+            </button>
+          )}
+          {view === "active" && (
+            <Select
+              className="quad-select"
+              label="Focus quadrant"
+              align="right"
+              value={focusQuadrant === null ? "" : String(focusQuadrant)}
+              onChange={(value) =>
+                changeFocus(value === "" ? null : (Number(value) as KnownQuadrant))
+              }
+              leading={
+                <span
+                  className={`quad-mark${focusQuadrant ? ` q${focusQuadrant}` : ""}`}
+                  aria-hidden="true"
+                />
+              }
+              options={[
+                {
+                  value: "",
+                  label: "All quadrants",
+                  hint: String(
+                    quadrantCounts[1] +
+                      quadrantCounts[2] +
+                      quadrantCounts[3] +
+                      quadrantCounts[4]
+                  ),
+                  dot: "conic-gradient(var(--q2) 0 25%, var(--q1) 0 50%, var(--q4) 0 75%, var(--q3) 0)",
+                  dotShape: "square"
+                },
+                ...([1, 2, 3, 4] as const).map((quadrant) => ({
+                  value: String(quadrant),
+                  label: QUADRANTS[quadrant].name,
+                  hint: String(quadrantCounts[quadrant]),
+                  dot: `var(--q${quadrant})`
+                }))
+              ]}
+            />
+          )}
+        </div>
+
+        <main
+          className={`workspace${selectedTask ? " has-drawer" : ""}`}
+        >
+          {view === "active" ? (
+            focusQuadrant === null ? (
+              <Matrix
+                tasks={filteredTasks}
+                threshold={settings.threshold}
+                selectedId={selectedId}
+                forceIndividual={isFiltering}
+                onSelect={handleSelect}
+                onComplete={handleComplete}
+                onNudge={handleNudge}
+                onFocusQuadrant={changeFocus}
+                emptyMessage={emptyMessage}
+                emptyHint={emptyHint}
+              />
+            ) : (
+              <QuadrantFocus
+                quadrant={focusQuadrant}
+                tasks={focusTasks}
+                threshold={settings.threshold}
+                selectedId={selectedId}
+                isFiltering={isFiltering}
+                mode={focusMode}
+                onModeChange={changeFocusMode}
+                onSelect={handleSelect}
+                onComplete={handleComplete}
+                onNudge={handleNudge}
+                onExit={() => changeFocus(null)}
+              />
+            )
+          ) : view === "calendar" ? (
+            <CalendarView
               tasks={filteredTasks}
               threshold={settings.threshold}
               selectedId={selectedId}
-              forceIndividual={isFiltering}
               onSelect={handleSelect}
-              onComplete={handleComplete}
-              onNudge={handleNudge}
-              onFocusQuadrant={changeFocus}
-              emptyMessage={emptyMessage}
-              emptyHint={emptyHint}
+              onError={showError}
             />
           ) : (
-            <QuadrantFocus
-              quadrant={focusQuadrant}
-              tasks={focusTasks}
-              threshold={settings.threshold}
-              selectedId={selectedId}
-              isFiltering={isFiltering}
-              mode={focusMode}
-              onModeChange={changeFocusMode}
-              onSelect={handleSelect}
-              onComplete={handleComplete}
-              onNudge={handleNudge}
-              onExit={() => changeFocus(null)}
+            <TaskLists
+              view={view}
+              tasks={filteredTasks}
+              onRestore={handleRestore}
+              onArchive={handleArchiveFromList}
+              onDelete={requestDelete}
             />
-          )
-        ) : view === "calendar" ? (
-          <CalendarView
-            tasks={filteredTasks}
-            threshold={settings.threshold}
-            selectedId={selectedId}
-            onSelect={handleSelect}
-            onError={pushError}
-          />
-        ) : (
-          <TaskLists
-            view={view}
-            tasks={filteredTasks}
-            onRestore={handleRestore}
-            onArchive={handleArchiveFromList}
-            onDelete={requestDelete}
-          />
-        )}
+          )}
 
-        {selectedTask && (
-          <>
-            <div
-              className="drawer-backdrop"
-              onClick={() => setSelectedId(null)}
-            />
-            <TaskDrawer
-              key={selectedTask.id}
-              task={selectedTask}
-              tags={tags}
-              threshold={settings.threshold}
-              conflicts={conflictTitles}
-              onClose={() => setSelectedId(null)}
-              onPreview={(patch) => handlePreview(selectedTask.id, patch)}
-              onSave={(patch) => handleSave(selectedTask.id, patch)}
-              onComplete={() => handleComplete(selectedTask)}
-              onArchive={() => handleArchive(selectedTask)}
-              onDelete={() => requestDelete(selectedTask)}
-              onCreateTag={handleCreateTag}
-            />
-          </>
-        )}
-      </main>
+          {selectedTask && (
+            <>
+              <div
+                className="drawer-backdrop"
+                onClick={() => setSelectedId(null)}
+              />
+              <TaskDrawer
+                key={selectedTask.id}
+                task={selectedTask}
+                tags={tags}
+                threshold={settings.threshold}
+                conflicts={conflictTitles}
+                onClose={() => setSelectedId(null)}
+                onPreview={(patch) => handlePreview(selectedTask.id, patch)}
+                onSave={(patch) => handleSave(selectedTask.id, patch)}
+                onComplete={() => handleComplete(selectedTask)}
+                onArchive={() => handleArchive(selectedTask)}
+                onDelete={() => requestDelete(selectedTask)}
+                onCreateTag={handleCreateTag}
+              />
+            </>
+          )}
+        </main>
+      </div>
 
       {addOpen && (
         <AddTaskModal

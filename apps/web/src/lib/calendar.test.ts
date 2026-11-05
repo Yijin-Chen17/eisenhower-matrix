@@ -66,6 +66,31 @@ describe("calendar parsing", () => {
     ).toBe(true);
   });
 
+  it("keeps the wall clock of a TZID whose VTIMEZONE is empty", () => {
+    const events = parseCalendarEvents(
+      `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//EN
+BEGIN:VTIMEZONE
+TZID:Asia/Hong_Kong
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:hk-class
+SUMMARY:Computer Fundamentals
+DTSTART;TZID=Asia/Hong_Kong:20261019T090000
+DTEND;TZID=Asia/Hong_Kong:20261019T110000
+END:VEVENT
+END:VCALENDAR`,
+      RANGE_START,
+      RANGE_END,
+      "calendar-1"
+    );
+
+    // 09:00 in Hong Kong (UTC+8) is 01:00 UTC — not 09:00 UTC.
+    expect(events[0]?.start).toBe("2026-10-19T01:00:00.000Z");
+    expect(events[0]?.end).toBe("2026-10-19T03:00:00.000Z");
+  });
+
   it("ignores events outside the requested range", () => {
     const events = parseCalendarEvents(
       ICS,

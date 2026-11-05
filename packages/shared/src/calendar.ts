@@ -50,8 +50,7 @@ const isoDateTimeSchema = z.string().datetime();
 export const createCalendarSubscriptionSchema = z.object({
   name: z.string().trim().min(1).max(60),
   url: z.string().trim().min(1),
-  color: colorSchema.optional(),
-  proxyUrl: z.string().trim().url().optional()
+  color: colorSchema.optional()
 });
 
 export const importCalendarSchema = z.object({
@@ -59,6 +58,13 @@ export const importCalendarSchema = z.object({
   ics: z.string().min(1).max(5_000_000),
   color: colorSchema.optional()
 });
+
+export const updateCalendarSubscriptionSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60).optional(),
+    color: colorSchema.optional()
+  })
+  .refine((value) => Object.keys(value).length > 0, "Nothing to update");
 
 export const calendarQuerySchema = z.object({
   start: isoDateTimeSchema,
@@ -69,6 +75,9 @@ export type CreateCalendarSubscriptionInput = z.infer<
   typeof createCalendarSubscriptionSchema
 >;
 export type ImportCalendarInput = z.infer<typeof importCalendarSchema>;
+export type UpdateCalendarSubscriptionInput = z.infer<
+  typeof updateCalendarSubscriptionSchema
+>;
 
 export function normalizeCalendarUrl(raw: string): string {
   const trimmed = raw.trim();
@@ -100,13 +109,106 @@ interface ParsedOccurrence {
   allDay: boolean;
 }
 
+const tzFormatters = new Map<string, Intl.DateTimeFormat | null>();
+
+function zoneFormatter(timeZone: string): Intl.DateTimeFormat | null {
+  if (tzFormatters.has(timeZone)) {
+    return tzFormatters.get(timeZone) ?? null;
+  }
+
+  let formatter: Intl.DateTimeFormat | null = null;
+  try {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+  } catch {
+    formatter = null;
+  }
+
+  tzFormatters.set(timeZone, formatter);
+  return formatter;
+}
+
+/** Offset of `timeZone` at the given instant, in milliseconds (east positive). */
+function zoneOffsetMs(formatter: Intl.DateTimeFormat, instant: number): number {
+  const parts = formatter.formatToParts(new Date(instant));
+  const pick = (type: string) =>
+    Number(parts.find((part) => part.type === type)?.value ?? "0");
+
+  const asUtc = Date.UTC(
+    pick("year"),
+    pick("month") - 1,
+    pick("day"),
+    pick("hour"),
+    pick("minute"),
+    pick("second")
+  );
+
+  return asUtc - instant;
+}
+
+/**
+ * Convert a wall-clock ICAL time to an absolute instant using the IANA zone it
+ * references. Two passes are needed so that times close to a DST switch land on
+ * the right side of the transition.
+ */
+function wallClockToInstant(time: ICAL.Time, timeZone: string): Date | null {
+  const formatter = zoneFormatter(timeZone);
+  if (!formatter) return null;
+
+  const wall = Date.UTC(
+    time.year,
+    time.month - 1,
+    time.day,
+    time.hour,
+    time.minute,
+    time.second
+  );
+
+  const firstOffset = zoneOffsetMs(formatter, wall);
+  const guess = wall - firstOffset;
+  const secondOffset = zoneOffsetMs(formatter, guess);
+
+  return new Date(secondOffset === firstOffset ? guess : wall - secondOffset);
+}
+
+/**
+ * ical.js falls back to treating the value as UTC when a feed references a
+ * TZID it cannot resolve (for example a VTIMEZONE block with no observances).
+ * That shifts every event by the zone offset, so resolve such values through
+ * `Intl` instead.
+ */
+function toDate(time: ICAL.Time | null | undefined): Date | null {
+  if (!time) return null;
+
+  const tzid = time.zone?.tzid ?? "";
+  if (
+    time.isDate ||
+    !tzid ||
+    tzid === "floating" ||
+    tzid === "UTC" ||
+    ICAL.TimezoneService.has(tzid)
+  ) {
+    return time.toJSDate();
+  }
+
+  return wallClockToInstant(time, tzid) ?? time.toJSDate();
+}
+
 function textProperty(event: ICAL.Event, name: string): string | null {
   const value = event.component.getFirstPropertyValue(name);
   return typeof value === "string" && value.trim() ? value : null;
 }
 
 function eventEnd(event: ICAL.Event, start: Date, allDay: boolean): Date {
-  const end = event.endDate?.toJSDate();
+  const end = toDate(event.endDate);
   if (end && end.getTime() > start.getTime()) return end;
   return new Date(start.getTime() + (allDay ? 86_400_000 : 3_600_000));
 }
@@ -173,7 +275,7 @@ export function parseCalendarEvents(
     }
 
     if (!event.isRecurring()) {
-      const start = event.startDate?.toJSDate();
+      const start = toDate(event.startDate);
       if (!start) continue;
       const allDay = Boolean(event.startDate?.isDate);
       const end = eventEnd(event, start, allDay);
@@ -198,7 +300,8 @@ export function parseCalendarEvents(
       const next = iterator.next();
       if (!next) break;
 
-      const occurrenceStart = next.toJSDate();
+      const occurrenceStart = toDate(next);
+      if (!occurrenceStart) break;
       if (occurrenceStart.getTime() > rangeEnd.getTime()) break;
 
       const details = event.getOccurrenceDetails(next);
@@ -210,7 +313,8 @@ export function parseCalendarEvents(
         continue;
       }
 
-      const start = details.startDate.toJSDate();
+      const start = toDate(details.startDate);
+      if (!start) continue;
       const allDay = Boolean(details.startDate.isDate);
       const end = eventEnd(occurrenceEvent, start, allDay);
       if (!overlaps(start, end, rangeStart, rangeEnd)) continue;

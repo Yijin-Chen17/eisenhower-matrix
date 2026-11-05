@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Settings, Tag, Theme } from "@eisenhower/shared";
+import { useSystemTheme } from "../lib/theme";
 import { DateInput } from "./DateInput";
 
 interface AddTaskModalProps {
@@ -115,16 +116,22 @@ const THEME_OPTIONS: Array<{
   swatches: string[];
 }> = [
   {
-    value: "graphite",
-    label: "Graphite",
-    description: "Dark, calm, easy on the eyes.",
+    value: "light",
+    label: "Light",
+    description: "Soft gray daylight.",
+    swatches: ["#E9EDF3", "#E03A47", "#007FD4", "#E0A100"]
+  },
+  {
+    value: "dark",
+    label: "Dark",
+    description: "Calm, easy on the eyes.",
     swatches: ["#1A1D23", "#F04452", "#0087EE", "#FFB020"]
   },
   {
-    value: "fog",
-    label: "Fog",
-    description: "Soft gray daylight, low glare.",
-    swatches: ["#DCE2E9", "#E03A47", "#007FD4", "#E0A100"]
+    value: "system",
+    label: "System",
+    description: "Match your device.",
+    swatches: ["#1A1D23", "#E9EDF3", "#007FD4", "#FFB020"]
   }
 ];
 
@@ -137,6 +144,7 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [threshold, setThreshold] = useState(settings.threshold);
   const timerRef = useRef<number | null>(null);
+  const systemTheme = useSystemTheme();
 
   useEffect(() => {
     setThreshold(settings.threshold);
@@ -231,10 +239,19 @@ export function SettingsDialog({
                   ))}
                 </span>
                 <strong>{option.label}</strong>
-                <span>{option.description}</span>
+                <span>
+                  {option.value === "system"
+                    ? `Your device · ${systemTheme}`
+                    : option.description}
+                </span>
               </button>
             ))}
           </div>
+          {settings.theme === "system" && (
+            <p className="hint">
+              Following the system color scheme — currently {systemTheme}.
+            </p>
+          )}
         </div>
 
         <div className="field">

@@ -9,15 +9,18 @@ import {
   importCalendarSchema,
   isValidCalendarIcs,
   normalizeCalendarUrl,
+  normalizeTheme,
   parseCalendarEvents,
   settingsPatchSchema,
   tagColorFor,
+  updateCalendarSubscriptionSchema,
   updateTaskSchema,
   type CalendarEvent,
   type CalendarSourceType,
   type CalendarSubscription,
   type CreateCalendarSubscriptionInput,
   type ImportCalendarInput,
+  type UpdateCalendarSubscriptionInput,
   type Settings,
   type Tag,
   type Task,
@@ -38,7 +41,6 @@ interface StoredCalendar {
   color: string;
   sourceType: CalendarSourceType;
   url: string | null;
-  proxyUrl: string | null;
   rawIcs: string;
   lastFetchedAt: string | null;
   lastError: string | null;
@@ -84,7 +86,7 @@ function readStore(): Store {
         threshold: clampThreshold(
           parsed.settings?.threshold ?? DEFAULT_SETTINGS.threshold
         ),
-        theme: parsed.settings?.theme === "fog" ? "fog" : "graphite"
+        theme: normalizeTheme(parsed.settings?.theme)
       },
       calendars: Array.isArray(parsed.calendars) ? parsed.calendars : []
     };
@@ -140,21 +142,22 @@ function toSubscription(stored: StoredCalendar): CalendarSubscription {
   };
 }
 
-async function fetchViaProxy(
-  proxyUrl: string,
-  calendarUrl: string
-): Promise<string> {
-  let target: URL;
-  try {
-    target = new URL(proxyUrl);
-  } catch {
-    throw new Error("Enter a valid calendar proxy URL.");
-  }
-  target.searchParams.set("url", normalizeCalendarUrl(calendarUrl));
+async function fetchCalendarFeed(calendarUrl: string): Promise<string> {
+  const url = normalizeCalendarUrl(calendarUrl);
 
-  const response = await fetch(target.toString());
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Accept: "text/calendar, text/plain, */*" }
+    });
+  } catch {
+    throw new Error(
+      "Could not download this calendar. The provider may not allow direct browser requests (CORS) — upload an exported .ics file instead."
+    );
+  }
+
   if (!response.ok) {
-    throw new Error(`Calendar proxy returned ${response.status}.`);
+    throw new Error(`Calendar server returned ${response.status}.`);
   }
 
   const text = await response.text();
@@ -162,7 +165,7 @@ async function fetchViaProxy(
     throw new Error("This calendar file is too large.");
   }
   if (!isValidCalendarIcs(text)) {
-    throw new Error("The proxy did not return a valid iCalendar (.ics) feed.");
+    throw new Error("The URL did not return a valid iCalendar (.ics) feed.");
   }
   return text;
 }
@@ -328,13 +331,6 @@ export const localApi: ApiClient = {
   async createCalendar(
     input: CreateCalendarSubscriptionInput
   ): Promise<CalendarSubscription> {
-    if (!input.proxyUrl) {
-      throw new Error(
-        "URL subscriptions on this hosted version need a calendar proxy URL. Add one below, or upload an .ics file instead."
-      );
-    }
-    const proxyUrl = input.proxyUrl;
-
     const parsed = createCalendarSubscriptionSchema.safeParse(input);
     if (!parsed.success) throw new Error(parseMessage(parsed));
 
@@ -344,17 +340,24 @@ export const localApi: ApiClient = {
       throw new Error("This calendar is already added.");
     }
 
-    const rawIcs = await fetchViaProxy(proxyUrl, url);
+    let rawIcs = "";
+    let lastError: string | null = null;
+    try {
+      rawIcs = await fetchCalendarFeed(url);
+    } catch (error) {
+      lastError =
+        error instanceof Error ? error.message : "Could not fetch calendar";
+    }
+
     const calendar: StoredCalendar = {
       id: newId(),
       name: parsed.data.name,
       color: parsed.data.color ?? calendarColorFor(parsed.data.name),
       sourceType: "url",
       url,
-      proxyUrl,
       rawIcs,
-      lastFetchedAt: new Date().toISOString(),
-      lastError: null
+      lastFetchedAt: rawIcs ? new Date().toISOString() : null,
+      lastError
     };
     store.calendars.push(calendar);
     writeStore(store);
@@ -377,12 +380,28 @@ export const localApi: ApiClient = {
       color: parsed.data.color ?? calendarColorFor(parsed.data.name),
       sourceType: "file",
       url: null,
-      proxyUrl: null,
       rawIcs: parsed.data.ics,
       lastFetchedAt: new Date().toISOString(),
       lastError: null
     };
     store.calendars.push(calendar);
+    writeStore(store);
+    return toSubscription(calendar);
+  },
+
+  async updateCalendar(
+    id: string,
+    input: UpdateCalendarSubscriptionInput
+  ): Promise<CalendarSubscription> {
+    const parsed = updateCalendarSubscriptionSchema.safeParse(input);
+    if (!parsed.success) throw new Error(parseMessage(parsed));
+
+    const store = readStore();
+    const calendar = store.calendars.find((item) => item.id === id);
+    if (!calendar) throw new Error("Calendar not found");
+
+    if (parsed.data.name !== undefined) calendar.name = parsed.data.name;
+    if (parsed.data.color !== undefined) calendar.color = parsed.data.color;
     writeStore(store);
     return toSubscription(calendar);
   },
@@ -398,17 +417,12 @@ export const localApi: ApiClient = {
     const store = readStore();
     const calendar = store.calendars.find((item) => item.id === id);
     if (!calendar) throw new Error("Calendar not found");
-    if (calendar.sourceType !== "url" || !calendar.url) return toSubscription(calendar);
-
-    if (!calendar.proxyUrl) {
-      calendar.lastError =
-        "This calendar needs a proxy URL before it can be refreshed.";
-      writeStore(store);
+    if (calendar.sourceType !== "url" || !calendar.url) {
       return toSubscription(calendar);
     }
 
     try {
-      calendar.rawIcs = await fetchViaProxy(calendar.proxyUrl, calendar.url);
+      calendar.rawIcs = await fetchCalendarFeed(calendar.url);
       calendar.lastFetchedAt = new Date().toISOString();
       calendar.lastError = null;
     } catch (error) {
@@ -422,11 +436,9 @@ export const localApi: ApiClient = {
   async refreshAllCalendars(): Promise<CalendarSubscription[]> {
     const store = readStore();
     for (const calendar of store.calendars) {
-      if (calendar.sourceType !== "url" || !calendar.url || !calendar.proxyUrl) {
-        continue;
-      }
+      if (calendar.sourceType !== "url" || !calendar.url) continue;
       try {
-        calendar.rawIcs = await fetchViaProxy(calendar.proxyUrl, calendar.url);
+        calendar.rawIcs = await fetchCalendarFeed(calendar.url);
         calendar.lastFetchedAt = new Date().toISOString();
         calendar.lastError = null;
       } catch (error) {

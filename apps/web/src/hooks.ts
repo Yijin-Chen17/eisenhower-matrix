@@ -6,7 +6,8 @@ import {
   type Settings,
   type Tag,
   type Task,
-  type TaskView
+  type TaskView,
+  type UpdateCalendarSubscriptionInput
 } from "@eisenhower/shared";
 import { api, type CreateTaskInput, type UpdateTaskInput } from "./api";
 
@@ -251,6 +252,21 @@ export function useImportCalendar() {
 
   return useMutation({
     mutationFn: (input: ImportCalendarInput) => api.importCalendar(input),
+    onSuccess: () => invalidateCalendars(queryClient)
+  });
+}
+
+export function useUpdateCalendar() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      patch
+    }: {
+      id: string;
+      patch: UpdateCalendarSubscriptionInput;
+    }) => api.updateCalendar(id, patch),
     onSuccess: () => invalidateCalendars(queryClient)
   });
 }

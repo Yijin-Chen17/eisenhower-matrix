@@ -5,6 +5,7 @@ import {
   calendarColorFor,
   clampScore,
   clampThreshold,
+  normalizeTheme,
   tagColorFor,
   type CalendarSourceType,
   type CalendarSubscription,
@@ -307,7 +308,7 @@ export function getSettings(db: AppDb): Settings {
     const parsed = JSON.parse(row.value) as Partial<Settings>;
     return {
       threshold: clampThreshold(parsed.threshold ?? DEFAULT_SETTINGS.threshold),
-      theme: parsed.theme === "fog" ? "fog" : "graphite"
+      theme: normalizeTheme(parsed.theme)
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -419,6 +420,26 @@ export function updateCalendarSubscriptionFetch(
   if (input.lastFetchedAt !== undefined) {
     patch.lastFetchedAt = input.lastFetchedAt;
   }
+
+  const changed = db
+    .update(calendarSubscriptionsTable)
+    .set(patch)
+    .where(eq(calendarSubscriptionsTable.id, id))
+    .run().changes;
+
+  return changed ? getCalendarSubscription(db, id) : null;
+}
+
+export function updateCalendarSubscription(
+  db: AppDb,
+  id: string,
+  input: { name?: string; color?: string }
+): CalendarSubscription | null {
+  const patch: Partial<typeof calendarSubscriptionsTable.$inferInsert> = {
+    updatedAt: nowIso()
+  };
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.color !== undefined) patch.color = input.color;
 
   const changed = db
     .update(calendarSubscriptionsTable)
