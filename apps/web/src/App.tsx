@@ -106,6 +106,17 @@ const NAV_ITEMS: NavItem[] = [
   }
 ];
 
+function BrandMark() {
+  return (
+    <div className="brand-mark" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
 const SIDEBAR_KEY = "eisenhower.sidebarCollapsed";
 
 export default function App() {
@@ -569,12 +580,19 @@ export default function App() {
       >
         <div className="sidebar-head">
           <div className="brand">
-            <div className="brand-mark" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span />
-            </div>
+            {sidebarCollapsed ? (
+              <button
+                className="brand-mark-button"
+                onClick={() => setSidebarCollapsed(false)}
+                title="Expand sidebar"
+                aria-label="Expand sidebar"
+                aria-expanded={false}
+              >
+                <BrandMark />
+              </button>
+            ) : (
+              <BrandMark />
+            )}
             <div className="brand-copy">
               <h1>Eisenhower Matrix</h1>
             </div>
@@ -582,10 +600,10 @@ export default function App() {
 
           <button
             className="sidebar-toggle"
-            onClick={() => setSidebarCollapsed((value) => !value)}
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!sidebarCollapsed}
+            onClick={() => setSidebarCollapsed(true)}
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+            aria-expanded
           >
             <svg
               viewBox="0 0 24 24"

@@ -164,14 +164,11 @@ button {
 }
 
 .sidebar-head {
-  /* mark 30 + gap 8 + toggle 28, plus the bottom padding */
-  --head-stack: calc(30px + 8px + 28px + 10px);
   display: flex;
   align-items: center;
   gap: 8px;
-  /* The collapsed rail stacks the mark and the toggle, so reserve that height
-     up front — collapsing must not shift everything below it. */
-  min-height: var(--head-stack);
+  /* Roomy head while expanded; the collapsed rail shrinks to the mark alone. */
+  min-height: 76px;
   padding: 0 6px 10px;
 }
 
@@ -198,6 +195,28 @@ button {
   gap: 2px;
   padding: 4px;
   background: var(--text);
+}
+
+/* Collapsed rail: the mark doubles as the expand control. */
+.brand-mark-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  cursor: pointer;
+  transition: box-shadow 0.14s ease;
+}
+
+.brand-mark-button:hover {
+  box-shadow: 0 0 0 3px var(--surface-muted);
+}
+
+.brand-mark-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .brand-mark span {
@@ -342,10 +361,9 @@ button {
   }
 
   .is-collapsed .sidebar-head {
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    min-height: 0;
     padding-left: 0;
     padding-right: 0;
   }
@@ -371,7 +389,7 @@ button {
   }
 
   .is-collapsed .sidebar-toggle {
-    transform: rotate(180deg);
+    display: none;
   }
 }
 
