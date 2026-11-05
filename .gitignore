@@ -6,3 +6,6 @@ backups/
 .DS_Store
 .env
 .env.local
+
+# tsx temp dirs created when the server runs outside npm
+apps/server/undefined/

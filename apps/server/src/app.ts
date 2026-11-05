@@ -12,6 +12,7 @@ import {
   normalizeCalendarUrl,
   parseCalendarEvents,
   settingsPatchSchema,
+  updateCalendarSubscriptionSchema,
   updateTagSchema,
   updateTaskSchema,
   type CalendarEvent,
@@ -32,6 +33,7 @@ import {
   listCalendarSubscriptions,
   listTags,
   listTasks,
+  updateCalendarSubscription,
   updateCalendarSubscriptionFetch,
   updateSettings,
   updateTag,
@@ -262,6 +264,19 @@ export function createApp(db: AppDb) {
       await refreshSubscription(subscription);
     }
     return c.json(listCalendarSubscriptions(db));
+  });
+
+  app.patch("/api/calendar/subscriptions/:id", async (c) => {
+    const input = await parseJson(c, updateCalendarSubscriptionSchema);
+    const subscription = updateCalendarSubscription(
+      db,
+      c.req.param("id"),
+      input
+    );
+    if (!subscription) {
+      throw new HTTPException(404, { message: "Calendar not found" });
+    }
+    return c.json(subscription);
   });
 
   app.delete("/api/calendar/subscriptions/:id", (c) => {

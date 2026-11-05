@@ -50,8 +50,7 @@ const isoDateTimeSchema = z.string().datetime();
 export const createCalendarSubscriptionSchema = z.object({
   name: z.string().trim().min(1).max(60),
   url: z.string().trim().min(1),
-  color: colorSchema.optional(),
-  proxyUrl: z.string().trim().url().optional()
+  color: colorSchema.optional()
 });
 
 export const importCalendarSchema = z.object({
@@ -59,6 +58,13 @@ export const importCalendarSchema = z.object({
   ics: z.string().min(1).max(5_000_000),
   color: colorSchema.optional()
 });
+
+export const updateCalendarSubscriptionSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60).optional(),
+    color: colorSchema.optional()
+  })
+  .refine((value) => Object.keys(value).length > 0, "Nothing to update");
 
 export const calendarQuerySchema = z.object({
   start: isoDateTimeSchema,
@@ -69,6 +75,9 @@ export type CreateCalendarSubscriptionInput = z.infer<
   typeof createCalendarSubscriptionSchema
 >;
 export type ImportCalendarInput = z.infer<typeof importCalendarSchema>;
+export type UpdateCalendarSubscriptionInput = z.infer<
+  typeof updateCalendarSubscriptionSchema
+>;
 
 export function normalizeCalendarUrl(raw: string): string {
   const trimmed = raw.trim();

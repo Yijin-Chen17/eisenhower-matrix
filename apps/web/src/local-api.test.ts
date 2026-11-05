@@ -162,32 +162,29 @@ describe("localApi", () => {
     expect(events.some((event) => event.allDay)).toBe(true);
   });
 
-  it("requires a proxy for URL subscriptions in static mode", async () => {
-    await expect(
-      localApi.createCalendar({
-        name: "Remote",
-        url: "https://example.com/calendar.ics"
+  it("fetches a URL subscription directly and keeps a custom color", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(ICS, {
+        status: 200,
+        headers: { "content-type": "text/calendar" }
       })
-    ).rejects.toThrow("proxy");
-  });
-
-  it("fetches a URL subscription through the proxy", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(ICS, {
-          status: 200,
-          headers: { "content-type": "text/calendar" }
-        })
-      )
     );
+    vi.stubGlobal("fetch", fetchMock);
 
     const calendar = await localApi.createCalendar({
       name: "Remote",
       url: "webcal://example.com/calendar.ics",
-      proxyUrl: "https://proxy.example/"
+      color: "#3DDC97"
     });
     expect(calendar.url).toBe("https://example.com/calendar.ics");
+    expect(calendar.color).toBe("#3DDC97");
+    expect(calendar.lastError).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.com/calendar.ics",
+      expect.objectContaining({
+        headers: { Accept: "text/calendar, text/plain, */*" }
+      })
+    );
 
     const calendars = await localApi.listCalendars();
     expect(calendars).toHaveLength(1);
@@ -197,5 +194,30 @@ describe("localApi", () => {
       "2026-10-25T00:00:00.000Z"
     );
     expect(events.some((event) => event.title === "Team meeting")).toBe(true);
+  });
+
+  it("records a fetch failure instead of dropping the calendar", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed")));
+
+    const calendar = await localApi.createCalendar({
+      name: "Blocked",
+      url: "https://example.com/calendar.ics"
+    });
+
+    expect(calendar.lastError).toContain("CORS");
+    expect(await localApi.listCalendars()).toHaveLength(1);
+  });
+
+  it("updates a calendar color", async () => {
+    const calendar = await localApi.importCalendar({
+      name: "Imported",
+      ics: ICS
+    });
+
+    const updated = await localApi.updateCalendar(calendar.id, {
+      color: "#B388FF"
+    });
+    expect(updated.color).toBe("#B388FF");
+    expect((await localApi.listCalendars())[0]?.color).toBe("#B388FF");
   });
 });

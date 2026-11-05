@@ -2830,19 +2830,62 @@ textarea {
 }
 
 .cal-sub {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
   padding: 8px 0;
   border-top: 1px solid var(--border);
 }
 
-.cal-sub > i {
-  flex: 0 0 8px;
-  width: 8px;
-  height: 8px;
-  margin-top: 5px;
+.cal-sub-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cal-sub-dot {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
   border-radius: 50%;
+  border: 0;
+  padding: 0;
+  box-shadow: 0 0 0 0 var(--border-strong);
+  transition: box-shadow 0.15s;
+}
+
+.cal-sub-dot:hover,
+.cal-sub-dot.open {
+  box-shadow: 0 0 0 3px var(--surface-muted-2);
+}
+
+.cal-sub-colors {
+  padding: 6px 0 2px 20px;
+}
+
+.cal-color-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.cal-color-dot {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  box-shadow: 0 0 0 1px var(--border) inset;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+
+.cal-color-dot:hover {
+  transform: scale(1.12);
+}
+
+.cal-color-dot.active {
+  border-color: var(--surface-raised);
+  box-shadow: 0 0 0 2px var(--text);
 }
 
 .cal-sub-copy {

@@ -293,6 +293,10 @@ export default function App() {
     showToast(error instanceof Error ? error.message : "Something went wrong");
   }
 
+  function showError(message: string) {
+    showToast(message);
+  }
+
   function handleSelect(task: Task) {
     setSelectedId(task.id);
   }
@@ -694,7 +698,7 @@ export default function App() {
             threshold={settings.threshold}
             selectedId={selectedId}
             onSelect={handleSelect}
-            onError={pushError}
+            onError={showError}
           />
         ) : (
           <TaskLists

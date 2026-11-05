@@ -7,7 +7,8 @@ import type {
   Tag,
   Task,
   TaskStatus,
-  TaskView
+  TaskView,
+  UpdateCalendarSubscriptionInput
 } from "@eisenhower/shared";
 import { localApi } from "./local-api";
 
@@ -83,6 +84,10 @@ export interface ApiClient {
     input: CreateCalendarSubscriptionInput
   ): Promise<CalendarSubscription>;
   importCalendar(input: ImportCalendarInput): Promise<CalendarSubscription>;
+  updateCalendar(
+    id: string,
+    input: UpdateCalendarSubscriptionInput
+  ): Promise<CalendarSubscription>;
   deleteCalendar(id: string): Promise<{ ok: true }>;
   refreshCalendar(id: string): Promise<CalendarSubscription>;
   refreshAllCalendars(): Promise<CalendarSubscription[]>;
@@ -158,6 +163,16 @@ const httpApi: ApiClient = {
     });
   },
 
+  updateCalendar(
+    id: string,
+    input: UpdateCalendarSubscriptionInput
+  ): Promise<CalendarSubscription> {
+    return request<CalendarSubscription>(`/api/calendar/subscriptions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    });
+  },
+
   deleteCalendar(id: string): Promise<{ ok: true }> {
     return request<{ ok: true }>(`/api/calendar/subscriptions/${id}`, {
       method: "DELETE"
@@ -184,7 +199,5 @@ const httpApi: ApiClient = {
 };
 
 const useLocalData = import.meta.env.VITE_DATA_MODE === "local";
-
-export const isStaticDataMode = useLocalData;
 
 export const api: ApiClient = useLocalData ? localApi : httpApi;
