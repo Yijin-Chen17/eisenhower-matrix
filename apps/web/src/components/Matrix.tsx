@@ -136,6 +136,33 @@ export function Matrix({
     }
   }, [layout.clusters, openClusterId]);
 
+  /**
+   * A hovered card can leave the layout (completion, deletion, filtering)
+   * before the pointer ever leaves it, so `mouseleave` never fires and the
+   * tooltip would stay pinned to the screen. Drop hover state for anything
+   * that is no longer rendered.
+   */
+  useEffect(() => {
+    setHover((current) => {
+      if (!current) return current;
+
+      const taskId = current.task?.id;
+      if (taskId && !layout.cards.some((card) => card.task.id === taskId)) {
+        return null;
+      }
+
+      const clusterId = current.cluster?.id;
+      if (
+        clusterId &&
+        !layout.clusters.some((cluster) => cluster.id === clusterId)
+      ) {
+        return null;
+      }
+
+      return current;
+    });
+  }, [layout]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpenClusterId(null);
@@ -223,6 +250,11 @@ export function Matrix({
       event.stopPropagation();
       onSelect(task);
     }
+  }
+
+  function handleComplete(task: Task) {
+    setHover(null);
+    onComplete(task);
   }
 
   const openCluster =
@@ -425,7 +457,7 @@ export function Matrix({
               threshold={threshold}
               selected={card.task.id === selectedId}
               onSelect={onSelect}
-              onComplete={onComplete}
+              onComplete={handleComplete}
               onKeyDown={handleNudge}
               onMouseEnter={showTaskHover}
               onMouseMove={moveHover}

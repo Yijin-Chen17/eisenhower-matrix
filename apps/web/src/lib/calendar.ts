@@ -1,6 +1,17 @@
 export const CALENDAR_START_HOUR = 7;
 export const CALENDAR_END_HOUR = 24;
-export const HOUR_HEIGHT = 56;
+/** Width of the dimmed "rest" band that follows 24:00 (i.e. 00:00–07:00 next day). */
+export const REST_END_HOUR = 7;
+/** Hours rendered per day column: 07:00 → 07:00 next day. */
+export const GRID_HOURS =
+  CALENDAR_END_HOUR - CALENDAR_START_HOUR + REST_END_HOUR;
+export const GRID_MINUTES = GRID_HOURS * 60;
+/** Minutes into the grid where the rest band starts (24:00). */
+export const REST_START_MINUTES =
+  (CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60;
+export const HOUR_HEIGHT = 40;
+export const MIN_HOUR_HEIGHT = 22;
+export const MAX_HOUR_HEIGHT = 72;
 
 export function startOfWeek(date: Date): Date {
   const next = new Date(date);
@@ -47,6 +58,13 @@ export function addHoursIso(iso: string, hours: number): string {
   return new Date(new Date(iso).getTime() + hours * 3_600_000).toISOString();
 }
 
+/** Local instant at `hour`:00 on the given date. */
+export function atHour(date: Date, hour: number): Date {
+  const next = new Date(date);
+  next.setHours(hour, 0, 0, 0);
+  return next;
+}
+
 export function formatTime(iso: string): string {
   return timeFromIso(iso);
 }
@@ -87,11 +105,6 @@ export function overlaps(
     new Date(aStart).getTime() < new Date(bEnd).getTime() &&
     new Date(aEnd).getTime() > new Date(bStart).getTime()
   );
-}
-
-export function minutesFromMidnight(iso: string): number {
-  const date = new Date(iso);
-  return date.getHours() * 60 + date.getMinutes();
 }
 
 export interface PositionedItem<T> {

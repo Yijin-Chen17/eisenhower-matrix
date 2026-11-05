@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties
+} from "react";
 import {
   dueLabel,
   dueState,
@@ -10,14 +17,19 @@ import { useCalendarEvents, useCalendars, useRefreshAllCalendars } from "../hook
 import {
   CALENDAR_END_HOUR,
   CALENDAR_START_HOUR,
+  GRID_MINUTES,
   HOUR_HEIGHT,
+  MAX_HOUR_HEIGHT,
+  MIN_HOUR_HEIGHT,
+  REST_END_HOUR,
+  REST_START_MINUTES,
   addDays,
+  atHour,
   addWeeks,
   formatHour,
   formatTime,
   localDateKey,
   layoutDayItems,
-  minutesFromMidnight,
   overlaps,
   startOfWeek,
   weekLabel,
@@ -54,17 +66,21 @@ type TimedSegment =
 interface DayData {
   date: Date;
   key: string;
+  windowStartMs: number;
   allDay: CalendarEvent[];
   due: Task[];
   timed: Array<PositionedItem<TimedSegment>>;
 }
 
-const GRID_START = CALENDAR_START_HOUR * 60;
-const GRID_END = CALENDAR_END_HOUR * 60;
-const GRID_HEIGHT = (CALENDAR_END_HOUR - CALENDAR_START_HOUR) * HOUR_HEIGHT;
-const HOURS = Array.from(
-  { length: CALENDAR_END_HOUR - CALENDAR_START_HOUR + 1 },
+/** Hours from 07:00 up to (not including) the rest band, used for axis labels. */
+const DAY_HOURS = Array.from(
+  { length: CALENDAR_END_HOUR - CALENDAR_START_HOUR },
   (_, index) => CALENDAR_START_HOUR + index
+);
+/** Rest band labels: 01:00 … 07:00 (00:00 shares the 24:00 boundary label). */
+const REST_HOURS = Array.from(
+  { length: REST_END_HOUR },
+  (_, index) => index + 1
 );
 
 function clamp(value: number, min: number, max: number): number {
@@ -88,22 +104,21 @@ function segmentRange(
   };
 }
 
-function blockStyle(segment: TimedSegment): CSSProperties {
-  const startMinutes = clamp(
-    minutesFromMidnight(segment.start),
-    GRID_START,
-    GRID_END
-  );
-  let endMinutes = minutesFromMidnight(segment.end);
-  if (endMinutes === 0) endMinutes = GRID_END;
-  endMinutes = clamp(endMinutes, GRID_START, GRID_END);
+function blockStyle(
+  segment: TimedSegment,
+  windowStartMs: number,
+  hourHeight: number
+): CSSProperties {
+  const minutesIntoGrid = (iso: string) =>
+    clamp((new Date(iso).getTime() - windowStartMs) / 60_000, 0, GRID_MINUTES);
 
-  const top = ((startMinutes - GRID_START) / 60) * HOUR_HEIGHT;
-  const height = Math.max(
-    22,
-    ((Math.max(endMinutes, startMinutes + 15) - startMinutes) / 60) * HOUR_HEIGHT
-  );
-  return { top, height };
+  const startMinutes = minutesIntoGrid(segment.start);
+  const endMinutes = Math.max(minutesIntoGrid(segment.end), startMinutes + 15);
+
+  return {
+    top: (startMinutes / 60) * hourHeight,
+    height: Math.max(15, ((endMinutes - startMinutes) / 60) * hourHeight)
+  };
 }
 
 function sortDue(a: Task, b: Task): number {
@@ -124,13 +139,18 @@ export function CalendarView({
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [hourHeight, setHourHeight] = useState(HOUR_HEIGHT);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const axisRef = useRef<HTMLDivElement>(null);
 
   const calendarsQuery = useCalendars();
   const calendars = calendarsQuery.data ?? [];
   const refreshAll = useRefreshAllCalendars();
 
   const rangeStart = weekStart.toISOString();
-  const rangeEnd = addDays(weekStart, 7).toISOString();
+  // Sunday's column runs into Monday 07:00, so fetch one extra day.
+  const rangeEnd = addDays(weekStart, 8).toISOString();
   const eventsQuery = useCalendarEvents(rangeStart, rangeEnd);
   const events = eventsQuery.data ?? [];
 
@@ -159,18 +179,26 @@ export function CalendarView({
     return Array.from({ length: 7 }, (_, index) => {
       const date = addDays(weekStart, index);
       const key = localDateKey(date);
-      const dayStart = date.toISOString();
-      const dayEnd = addDays(date, 1).toISOString();
+      const windowStart = atHour(date, CALENDAR_START_HOUR);
+      const windowEnd = atHour(addDays(date, 1), CALENDAR_START_HOUR);
+      const windowStartIso = windowStart.toISOString();
+      const windowEndIso = windowEnd.toISOString();
       const allDay: CalendarEvent[] = [];
       const timed: TimedSegment[] = [];
 
       for (const event of events) {
-        if (!overlaps(event.start, event.end, dayStart, dayEnd)) continue;
         if (event.allDay) {
-          allDay.push(event);
+          const startsOn = localDateKey(new Date(event.start));
+          const endsOn = localDateKey(new Date(event.end));
+          if (key >= startsOn && key < endsOn) allDay.push(event);
           continue;
         }
-        const range = segmentRange(event.start, event.end, dayStart, dayEnd);
+        const range = segmentRange(
+          event.start,
+          event.end,
+          windowStartIso,
+          windowEndIso
+        );
         if (!range) continue;
         timed.push({
           kind: "event",
@@ -187,8 +215,8 @@ export function CalendarView({
         const range = segmentRange(
           task.scheduledStart,
           task.scheduledEnd,
-          dayStart,
-          dayEnd
+          windowStartIso,
+          windowEndIso
         );
         if (!range) continue;
         const quadrant = quadrantOf(task, threshold);
@@ -209,12 +237,40 @@ export function CalendarView({
       return {
         date,
         key,
+        windowStartMs: windowStart.getTime(),
         allDay: allDay.sort((a, b) => a.title.localeCompare(b.title)),
         due,
         timed: layoutDayItems(timed)
       };
     });
   }, [weekStart, events, tasks, threshold, calendarsById]);
+
+  /**
+   * Scale the grid so that 07:00–24:00 always fills the visible area; the rest
+   * band then lives just below the fold.
+   */
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    const axis = axisRef.current;
+    if (!scroll || !axis) return;
+
+    const update = () => {
+      // `offsetTop` is layout based, so scrolling never skews the measurement.
+      const headerBlock = axis.offsetTop - scroll.offsetTop;
+      // Leave room for the 24:00 label plus a hint of the rest band.
+      const available = scroll.clientHeight - headerBlock - 20;
+      const perHour = Math.floor(
+        available / (CALENDAR_END_HOUR - CALENDAR_START_HOUR)
+      );
+      setHourHeight(clamp(perHour, MIN_HOUR_HEIGHT, MAX_HOUR_HEIGHT));
+    };
+
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(scroll);
+    return () => observer.disconnect();
+  }, [dayData]);
 
   const overdue = useMemo(
     () =>
@@ -237,6 +293,11 @@ export function CalendarView({
   }
 
   const error = eventsQuery.error ?? calendarsQuery.error;
+
+  const gridHeight = (GRID_MINUTES / 60) * hourHeight;
+  const restTop = (REST_START_MINUTES / 60) * hourHeight;
+  const restHeight = ((GRID_MINUTES - REST_START_MINUTES) / 60) * hourHeight;
+  const compactBelow = Math.max(30, hourHeight * 0.85);
 
   return (
     <div className="calendar-view">
@@ -336,10 +397,10 @@ export function CalendarView({
         </aside>
 
         <div className="cal-main">
-          <div className="cal-scroll">
+          <div className="cal-scroll" ref={scrollRef}>
             <div
               className="cal-grid"
-              style={{ ["--hour-height" as string]: `${HOUR_HEIGHT}px` }}
+              style={{ ["--hour-height" as string]: `${hourHeight}px` }}
             >
               <div className="cal-head-gutter" />
               {dayData.map((day) => (
@@ -380,16 +441,48 @@ export function CalendarView({
                 </div>
               ))}
 
-              <div className="cal-time-axis" style={{ height: GRID_HEIGHT }}>
-                {HOURS.map((hour) => (
+              <div
+                className="cal-time-axis"
+                ref={axisRef}
+                style={{ height: gridHeight }}
+              >
+                {DAY_HOURS.map((hour) => (
                   <span
                     key={hour}
-                    className={`cal-hour-label${hour === CALENDAR_END_HOUR ? " last" : ""}`}
-                    style={{ top: (hour - CALENDAR_START_HOUR) * HOUR_HEIGHT }}
+                    className="cal-hour-label"
+                    style={{ top: (hour - CALENDAR_START_HOUR) * hourHeight }}
                   >
                     {formatHour(hour)}
                   </span>
                 ))}
+                <span
+                  className="cal-hour-label split"
+                  style={{ top: restTop }}
+                >
+                  {formatHour(CALENDAR_END_HOUR)}
+                </span>
+                {REST_HOURS.map((hour) => (
+                  <span
+                    key={`rest-${hour}`}
+                    className={`cal-hour-label rest${
+                      hour === REST_END_HOUR ? " last" : ""
+                    }`}
+                    style={{
+                      top:
+                        (CALENDAR_END_HOUR -
+                          CALENDAR_START_HOUR +
+                          hour) *
+                        hourHeight
+                    }}
+                  >
+                    {formatHour(hour)}
+                  </span>
+                ))}
+                <span
+                  className="cal-rest-band"
+                  style={{ top: restTop, height: restHeight }}
+                  aria-hidden="true"
+                />
               </div>
 
               {dayData.map((day) => (
@@ -398,13 +491,18 @@ export function CalendarView({
                     day.key === todayKey ? " today" : ""
                   }`}
                   key={`col-${day.key}`}
-                  style={{ height: GRID_HEIGHT }}
+                  style={{ height: gridHeight }}
                 >
+                  <div
+                    className="cal-rest-zone"
+                    style={{ top: restTop, height: restHeight }}
+                    aria-hidden="true"
+                  />
                   {day.timed.map((positioned) => {
                     const segment = positioned.item;
                     const width = 100 / positioned.columns;
                     const style: CSSProperties = {
-                      ...blockStyle(segment),
+                      ...blockStyle(segment, day.windowStartMs, hourHeight),
                       left: `${positioned.column * width}%`,
                       width: `calc(${width}% - 4px)`,
                       ["--cal-color" as string]:
@@ -414,7 +512,9 @@ export function CalendarView({
                     };
                     const conflict = positioned.conflict ? " conflict" : "";
                     const compact =
-                      (style.height as number) < 44 ? " compact" : "";
+                      (style.height as number) < compactBelow
+                        ? " compact"
+                        : "";
 
                     if (segment.kind === "task") {
                       return (

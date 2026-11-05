@@ -568,6 +568,28 @@ export default function App() {
         className={`sidebar${sidebarOpen ? " open" : ""}`}
       >
         <div className="sidebar-head">
+          <button
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!sidebarCollapsed}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m14 6-6 6 6 6" />
+            </svg>
+          </button>
+
           <div className="brand">
             <div className="brand-mark" aria-hidden="true">
               <span />
@@ -631,27 +653,6 @@ export default function App() {
               </svg>
             </span>
             <span className="nav-label">Settings</span>
-          </button>
-          <button
-            className="sidebar-toggle"
-            onClick={() => setSidebarCollapsed((value) => !value)}
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!sidebarCollapsed}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m14 6-6 6 6 6" />
-            </svg>
           </button>
         </div>
       </aside>
