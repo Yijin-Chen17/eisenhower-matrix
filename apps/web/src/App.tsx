@@ -25,6 +25,7 @@ import { QuadrantFocus } from "./components/QuadrantFocus";
 import type { QuadrantViewMode } from "./components/QuadrantFocus";
 import { TaskDrawer } from "./components/TaskDrawer";
 import { TaskLists } from "./components/TaskLists";
+import { Select } from "./components/Select";
 import {
   useCreateTag,
   useCreateTask,
@@ -621,44 +622,41 @@ export default function App() {
           </button>
         )}
         {view === "active" && (
-          <label
-            className={`quad-select${focusQuadrant ? ` active q${focusQuadrant}` : ""}`}
-            title="Focus a quadrant"
-          >
-            <span className="quad-select-mark" aria-hidden="true" />
-            <select
-              aria-label="Focus quadrant"
-              value={focusQuadrant === null ? "" : String(focusQuadrant)}
-              onChange={(event) => {
-                const value = event.target.value;
-                changeFocus(
-                  value === "" ? null : (Number(value) as KnownQuadrant)
-                );
-              }}
-            >
-              <option value="">All quadrants</option>
-              {([1, 2, 3, 4] as const).map((quadrant) => (
-                <option key={quadrant} value={quadrant}>
-                  {QUADRANTS[quadrant].name} · {quadrantCounts[quadrant]}
-                </option>
-              ))}
-            </select>
-            <svg
-              viewBox="0 0 16 16"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              aria-hidden="true"
-            >
-              <path
-                d="m4 6 4 4 4-4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+          <Select
+            className="quad-select"
+            label="Focus quadrant"
+            align="right"
+            value={focusQuadrant === null ? "" : String(focusQuadrant)}
+            onChange={(value) =>
+              changeFocus(value === "" ? null : (Number(value) as KnownQuadrant))
+            }
+            leading={
+              <span
+                className={`quad-mark${focusQuadrant ? ` q${focusQuadrant}` : ""}`}
+                aria-hidden="true"
               />
-            </svg>
-          </label>
+            }
+            options={[
+              {
+                value: "",
+                label: "All quadrants",
+                hint: String(
+                  quadrantCounts[1] +
+                    quadrantCounts[2] +
+                    quadrantCounts[3] +
+                    quadrantCounts[4]
+                ),
+                dot: "conic-gradient(var(--q2) 0 25%, var(--q1) 0 50%, var(--q4) 0 75%, var(--q3) 0)",
+                dotShape: "square"
+              },
+              ...([1, 2, 3, 4] as const).map((quadrant) => ({
+                value: String(quadrant),
+                label: QUADRANTS[quadrant].name,
+                hint: String(quadrantCounts[quadrant]),
+                dot: `var(--q${quadrant})`
+              }))
+            ]}
+          />
         )}
       </div>
 

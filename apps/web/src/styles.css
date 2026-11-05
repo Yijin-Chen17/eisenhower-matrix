@@ -244,13 +244,13 @@ button {
   opacity: 0.8;
 }
 
-.quad-select {
-  position: relative;
+/* ---------- custom select ---------- */
+.select {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   height: 30px;
-  padding: 0 24px 0 9px;
+  padding: 0 9px;
   border: 1px solid transparent;
   border-radius: 9px;
   background: var(--surface-muted);
@@ -258,37 +258,129 @@ button {
   font-size: 11.5px;
   flex: 0 0 auto;
   margin-left: 4px;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s,
+    box-shadow 0.15s;
 }
 
-.quad-select:focus-within,
-.quad-select.active {
+.select:hover {
   background: var(--surface-raised);
-  border-color: var(--border-strong);
   color: var(--text);
 }
 
-.quad-select select {
-  width: 128px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  outline: 0;
-  padding: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
+.select.open,
+.select:focus-visible {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 2px 10px var(--card-shadow);
+  outline: none;
 }
 
-.quad-select > svg {
-  position: absolute;
-  right: 9px;
-  pointer-events: none;
+.select-value {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.select-hint {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-muted-2);
   color: var(--text-muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  display: grid;
+  place-items: center;
 }
 
-.quad-select-mark {
+.select-chevron {
+  flex: 0 0 12px;
+  color: var(--text-muted);
+  transition: transform 0.16s ease, color 0.16s;
+}
+
+.select.open .select-chevron {
+  transform: rotate(180deg);
+  color: var(--text);
+}
+
+.select-menu {
+  position: fixed;
+  z-index: 400;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-raised);
+  box-shadow: 0 16px 40px var(--popover-shadow);
+  animation: select-in 0.12s ease-out;
+  max-height: min(320px, 70vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+@keyframes select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.select-option.active {
+  background: var(--surface-muted);
+}
+
+.select-option.selected {
+  font-weight: 600;
+}
+
+.select-option-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.select-option-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.select-dot {
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.select-dot.square {
+  border-radius: 3px;
+}
+
+.select-check {
+  flex: 0 0 12px;
+  color: var(--accent);
+}
+
+.quad-mark {
   width: 10px;
   height: 10px;
   flex: 0 0 10px;
@@ -301,22 +393,22 @@ button {
   );
 }
 
-.quad-select.q1 .quad-select-mark {
+.quad-mark.q1 {
   border-radius: 50%;
   background: var(--q1);
 }
 
-.quad-select.q2 .quad-select-mark {
+.quad-mark.q2 {
   border-radius: 50%;
   background: var(--q2);
 }
 
-.quad-select.q3 .quad-select-mark {
+.quad-mark.q3 {
   border-radius: 50%;
   background: var(--q3);
 }
 
-.quad-select.q4 .quad-select-mark {
+.quad-mark.q4 {
   border-radius: 50%;
   background: var(--q4);
 }
@@ -3084,12 +3176,6 @@ textarea {
 
   .brand {
     min-width: 160px;
-  }
-}
-
-@media (max-width: 1080px) {
-  .quad-select select {
-    width: 108px;
   }
 }
 
