@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CalendarEvent, CalendarSubscription, Settings, Tag, Task } from "@eisenhower/shared";
+import {
+  isValidCalendarIcs,
+  parseCalendarEvents,
+  type CalendarEvent,
+  type CalendarSubscription,
+  type Settings,
+  type Tag,
+  type Task
+} from "@eisenhower/shared";
 import { createApp } from "../src/app";
 import { createDb, type DbContext } from "../src/db/client";
 
@@ -301,12 +309,94 @@ describe("API", () => {
     );
     expect(duplicate.response.status).toBe(409);
 
+    const patched = await request(
+      `/api/calendar/subscriptions/${subscription.id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ color: "#3DDC97" })
+      }
+    );
+    expect(patched.response.status).toBe(200);
+    expect((patched.body as CalendarSubscription).color).toBe("#3DDC97");
+
     const deleted = await request(
       `/api/calendar/subscriptions/${subscription.id}`,
       { method: "DELETE" }
     );
     expect(deleted.response.status).toBe(200);
     expect((await request("/api/calendar/subscriptions")).body).toEqual([]);
+  });
+
+  it("rejects failed URL subscriptions instead of saving broken feeds", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("Not found", { status: 404 })
+    );
+
+    const created = await request(
+      "/api/calendar/subscriptions",
+      json({
+        name: "Missing",
+        url: "https://example.com/missing.ics"
+      })
+    );
+    expect(created.response.status).toBe(422);
+    expect((await request("/api/calendar/subscriptions")).body).toEqual([]);
+  });
+
+  it("keeps events from separate subscriptions even when UIDs collide", async () => {
+    await request("/api/calendar/import", json({ name: "Cal 1", ics: ICS }));
+    await request("/api/calendar/import", json({ name: "Cal 2", ics: ICS }));
+
+    const events = await request(
+      `/api/calendar/events?start=${encodeURIComponent(EVENT_RANGE.start)}&end=${encodeURIComponent(EVENT_RANGE.end)}`
+    );
+    const list = events.body as CalendarEvent[];
+    expect(list.filter((event) => event.title === "Team meeting")).toHaveLength(2);
+  });
+
+  it("exports scheduled and due tasks as an ICS feed", async () => {
+    await request(
+      "/api/tasks",
+      json({
+        title: "Deep Work",
+        scheduledStart: "2026-10-19T01:00:00.000Z",
+        scheduledEnd: "2026-10-19T02:00:00.000Z"
+      })
+    );
+    await request(
+      "/api/tasks",
+      json({
+        title: "Pay Invoice",
+        dueDate: "2026-10-20"
+      })
+    );
+
+    const exported = await app.request("/api/calendar/export.ics?download=1");
+    expect(exported.status).toBe(200);
+    expect(exported.headers.get("content-type")).toContain("text/calendar");
+    expect(exported.headers.get("content-disposition")).toContain("attachment");
+    const icsText = await exported.text();
+    expect(isValidCalendarIcs(icsText)).toBe(true);
+
+    const parsed = parseCalendarEvents(
+      icsText,
+      new Date(EVENT_RANGE.start),
+      new Date(EVENT_RANGE.end),
+      "export"
+    );
+    expect(parsed.map((item) => item.title)).toEqual(["Deep Work", "Pay Invoice"]);
+
+    const scheduledOnly = await app.request(
+      "/api/calendar/export.ics?scope=scheduled"
+    );
+    const scheduledParsed = parseCalendarEvents(
+      await scheduledOnly.text(),
+      new Date(EVENT_RANGE.start),
+      new Date(EVENT_RANGE.end),
+      "export"
+    );
+    expect(scheduledParsed.map((item) => item.title)).toEqual(["Deep Work"]);
   });
 
   it("handles recurring routine task progression, streak, and subtasks", async () => {

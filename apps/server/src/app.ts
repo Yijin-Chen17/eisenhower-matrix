@@ -6,15 +6,17 @@ import {
   createCalendarSubscriptionSchema,
   createTagSchema,
   createTaskSchema,
+  exportTasksToIcs,
   importCalendarSchema,
   isValidCalendarIcs,
   listTasksQuerySchema,
-  normalizeCalendarUrl,
   parseCalendarEvents,
   settingsPatchSchema,
+  updateCalendarSubscriptionSchema,
   updateTagSchema,
   updateTaskSchema,
   type CalendarEvent,
+  type CalendarExportScope,
   type CalendarSubscription
 } from "@eisenhower/shared";
 import type { AppDb } from "./db/client";
@@ -32,12 +34,13 @@ import {
   listCalendarSubscriptions,
   listTags,
   listTasks,
+  updateCalendarSubscription,
   updateCalendarSubscriptionFetch,
   updateSettings,
   updateTag,
   updateTask
 } from "./db/repo";
-import { fetchCalendarIcs } from "./calendar";
+import { fetchCalendarIcs, parseCalendarHttpUrl } from "./calendar";
 
 async function parseJson<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
   let body: unknown;
@@ -190,7 +193,15 @@ export function createApp(db: AppDb) {
 
   app.post("/api/calendar/subscriptions", async (c) => {
     const input = await parseJson(c, createCalendarSubscriptionSchema);
-    const url = normalizeCalendarUrl(input.url);
+    let url: string;
+    try {
+      url = parseCalendarHttpUrl(input.url).toString();
+    } catch (error) {
+      throw new HTTPException(400, {
+        message:
+          error instanceof Error ? error.message : "Enter a valid calendar URL."
+      });
+    }
 
     const duplicate = listCalendarSubscriptions(db).find(
       (subscription) => subscription.url === url
@@ -202,12 +213,13 @@ export function createApp(db: AppDb) {
     }
 
     let rawIcs = "";
-    let lastError: string | null = null;
     try {
       rawIcs = await fetchCalendarIcs(url);
     } catch (error) {
-      lastError =
-        error instanceof Error ? error.message : "Could not fetch calendar";
+      throw new HTTPException(422, {
+        message:
+          error instanceof Error ? error.message : "Could not fetch calendar"
+      });
     }
 
     const subscription = insertCalendarSubscription(db, {
@@ -216,11 +228,20 @@ export function createApp(db: AppDb) {
       sourceType: "url",
       url,
       rawIcs,
-      lastFetchedAt: rawIcs ? new Date().toISOString() : null,
-      lastError
+      lastFetchedAt: new Date().toISOString(),
+      lastError: null
     });
 
     return c.json(subscription, 201);
+  });
+
+  app.patch("/api/calendar/subscriptions/:id", async (c) => {
+    const input = await parseJson(c, updateCalendarSubscriptionSchema);
+    const subscription = updateCalendarSubscription(db, c.req.param("id"), input);
+    if (!subscription) {
+      throw new HTTPException(404, { message: "Calendar not found" });
+    }
+    return c.json(subscription);
   });
 
   app.post("/api/calendar/import", async (c) => {
@@ -258,10 +279,38 @@ export function createApp(db: AppDb) {
 
   app.post("/api/calendar/refresh", async (c) => {
     const subscriptions = listCalendarSubscriptions(db);
-    for (const subscription of subscriptions) {
-      await refreshSubscription(subscription);
-    }
+    await Promise.all(
+      subscriptions.map((subscription) => refreshSubscription(subscription))
+    );
     return c.json(listCalendarSubscriptions(db));
+  });
+
+  app.get("/api/calendar/export.ics", (c) => {
+    const scopeParam = c.req.query("scope");
+    const scope: CalendarExportScope =
+      scopeParam === "scheduled" ? "scheduled" : "scheduled_and_due";
+    const includeCompletedParam = c.req.query("includeCompleted");
+    const includeCompleted =
+      includeCompletedParam === "1" || includeCompletedParam === "true";
+    const downloadParam = c.req.query("download");
+    const asAttachment = downloadParam === "1" || downloadParam === "true";
+
+    const active = listTasks(db, { view: "active" });
+    const completed = includeCompleted
+      ? listTasks(db, { view: "completed" })
+      : [];
+    const ics = exportTasksToIcs([...active, ...completed], {
+      scope,
+      includeCompleted
+    });
+
+    return c.body(ics, 200, {
+      "Content-Type": "text/calendar; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Content-Disposition": asAttachment
+        ? 'attachment; filename="eisenhower-calendar.ics"'
+        : 'inline; filename="eisenhower-calendar.ics"'
+    });
   });
 
   app.delete("/api/calendar/subscriptions/:id", (c) => {

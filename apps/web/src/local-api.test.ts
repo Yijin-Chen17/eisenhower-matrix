@@ -197,5 +197,41 @@ describe("localApi", () => {
       "2026-10-25T00:00:00.000Z"
     );
     expect(events.some((event) => event.title === "Team meeting")).toBe(true);
+
+    const updated = await localApi.updateCalendar(calendar.id, {
+      color: "#FF7A90"
+    });
+    expect(updated.color).toBe("#FF7A90");
+  });
+
+  it("keeps events from different calendars with identical UIDs", async () => {
+    await localApi.importCalendar({ name: "Cal A", ics: ICS });
+    await localApi.importCalendar({ name: "Cal B", ics: ICS });
+
+    const events = await localApi.listCalendarEvents(
+      "2026-10-18T00:00:00.000Z",
+      "2026-10-25T00:00:00.000Z"
+    );
+    expect(events.filter((event) => event.title === "Team meeting")).toHaveLength(2);
+  });
+
+  it("surfaces JSON error messages returned by the calendar proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: "The URL did not return an iCalendar feed" }), {
+          status: 422,
+          headers: { "content-type": "application/json" }
+        })
+      )
+    );
+
+    await expect(
+      localApi.createCalendar({
+        name: "Broken",
+        url: "https://example.com/not-ics",
+        proxyUrl: "https://proxy.example/"
+      })
+    ).rejects.toThrow("The URL did not return an iCalendar feed");
   });
 });

@@ -1,5 +1,6 @@
 import type {
   CalendarEvent,
+  CalendarExportScope,
   CalendarSubscription,
   CreateCalendarSubscriptionInput,
   ImportCalendarInput,
@@ -9,7 +10,8 @@ import type {
   Task,
   TaskChecklistItem,
   TaskStatus,
-  TaskView
+  TaskView,
+  UpdateCalendarSubscriptionInput
 } from "@eisenhower/shared";
 import { localApi } from "./local-api";
 
@@ -90,6 +92,10 @@ export interface ApiClient {
   createCalendar(
     input: CreateCalendarSubscriptionInput
   ): Promise<CalendarSubscription>;
+  updateCalendar(
+    id: string,
+    input: UpdateCalendarSubscriptionInput
+  ): Promise<CalendarSubscription>;
   importCalendar(input: ImportCalendarInput): Promise<CalendarSubscription>;
   deleteCalendar(id: string): Promise<{ ok: true }>;
   refreshCalendar(id: string): Promise<CalendarSubscription>;
@@ -159,6 +165,16 @@ const httpApi: ApiClient = {
     });
   },
 
+  updateCalendar(
+    id: string,
+    input: UpdateCalendarSubscriptionInput
+  ): Promise<CalendarSubscription> {
+    return request<CalendarSubscription>(`/api/calendar/subscriptions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    });
+  },
+
   importCalendar(input: ImportCalendarInput): Promise<CalendarSubscription> {
     return request<CalendarSubscription>("/api/calendar/import", {
       method: "POST",
@@ -194,5 +210,18 @@ const httpApi: ApiClient = {
 const useLocalData = import.meta.env.VITE_DATA_MODE === "local";
 
 export const isStaticDataMode = useLocalData;
+
+export function buildCalendarExportPath(options: {
+  scope: CalendarExportScope;
+  includeCompleted: boolean;
+  download?: boolean;
+}): string {
+  const params = new URLSearchParams({
+    scope: options.scope,
+    includeCompleted: options.includeCompleted ? "1" : "0"
+  });
+  if (options.download) params.set("download", "1");
+  return `/api/calendar/export.ics?${params}`;
+}
 
 export const api: ApiClient = useLocalData ? localApi : httpApi;

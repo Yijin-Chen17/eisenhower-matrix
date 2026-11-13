@@ -3,9 +3,13 @@ import { isValidCalendarIcs, normalizeCalendarUrl } from "@eisenhower/shared";
 const MAX_ICS_BYTES = 5_000_000;
 const FETCH_TIMEOUT_MS = 15_000;
 
-export async function fetchCalendarIcs(rawUrl: string): Promise<string> {
-  const url = normalizeCalendarUrl(rawUrl);
+export function parseCalendarHttpUrl(rawUrl: string): URL {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    throw new Error("Enter a valid calendar URL.");
+  }
 
+  const url = normalizeCalendarUrl(trimmed);
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -16,6 +20,15 @@ export async function fetchCalendarIcs(rawUrl: string): Promise<string> {
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     throw new Error("Calendar URLs must use http or https.");
   }
+  if (!parsed.hostname || !parsed.hostname.includes(".") && parsed.hostname !== "localhost") {
+    throw new Error("Enter a valid calendar URL.");
+  }
+
+  return parsed;
+}
+
+export async function fetchCalendarIcs(rawUrl: string): Promise<string> {
+  const parsed = parseCalendarHttpUrl(rawUrl);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -40,7 +53,7 @@ export async function fetchCalendarIcs(rawUrl: string): Promise<string> {
     }
 
     const text = await response.text();
-    if (text.length > MAX_ICS_BYTES) {
+    if (Buffer.byteLength(text, "utf8") > MAX_ICS_BYTES) {
       throw new Error("This calendar file is too large.");
     }
     if (!isValidCalendarIcs(text)) {

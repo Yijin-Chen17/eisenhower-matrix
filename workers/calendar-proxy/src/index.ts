@@ -153,10 +153,11 @@ export default {
       }
 
       const text = await upstream.text();
-      if (text.length > MAX_BYTES) {
+      if (new TextEncoder().encode(text).byteLength > MAX_BYTES) {
         return json({ error: "Calendar file is too large" }, 413, origin);
       }
-      if (!text.toUpperCase().includes("BEGIN:VCALENDAR")) {
+      const upper = text.toUpperCase();
+      if (!upper.includes("BEGIN:VCALENDAR") || !upper.includes("END:VCALENDAR")) {
         return json(
           { error: "The URL did not return an iCalendar feed" },
           422,

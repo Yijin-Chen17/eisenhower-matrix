@@ -14,6 +14,7 @@ import {
   parseCalendarEvents,
   settingsPatchSchema,
   tagColorFor,
+  updateCalendarSubscriptionSchema,
   updateTaskSchema,
   type CalendarEvent,
   type CalendarSourceType,
@@ -24,7 +25,8 @@ import {
   type Settings,
   type Tag,
   type Task,
-  type TaskView
+  type TaskView,
+  type UpdateCalendarSubscriptionInput
 } from "@eisenhower/shared";
 import type { ApiClient, CreateTaskInput, UpdateTaskInput } from "./api";
 
@@ -148,6 +150,12 @@ function toSubscription(stored: StoredCalendar): CalendarSubscription {
   };
 }
 
+const utf8Encoder = new TextEncoder();
+
+function configuredProxyUrl(): string {
+  return import.meta.env.VITE_CALENDAR_PROXY_URL?.trim() ?? "";
+}
+
 async function fetchViaProxy(
   proxyUrl: string,
   calendarUrl: string
@@ -162,11 +170,16 @@ async function fetchViaProxy(
 
   const response = await fetch(target.toString());
   if (!response.ok) {
-    throw new Error(`Calendar proxy returned ${response.status}.`);
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+    throw new Error(
+      payload?.error ?? `Calendar proxy returned ${response.status}.`
+    );
   }
 
   const text = await response.text();
-  if (text.length > MAX_ICS_BYTES) {
+  if (utf8Encoder.encode(text).byteLength > MAX_ICS_BYTES) {
     throw new Error("This calendar file is too large.");
   }
   if (!isValidCalendarIcs(text)) {
@@ -393,6 +406,24 @@ export const localApi: ApiClient = {
     return toSubscription(calendar);
   },
 
+  async updateCalendar(
+    id: string,
+    input: UpdateCalendarSubscriptionInput
+  ): Promise<CalendarSubscription> {
+    const parsed = updateCalendarSubscriptionSchema.safeParse(input);
+    if (!parsed.success) throw new Error(parseMessage(parsed));
+
+    const store = readStore();
+    const calendar = store.calendars.find((item) => item.id === id);
+    if (!calendar) throw new Error("Calendar not found");
+
+    if (parsed.data.name !== undefined) calendar.name = parsed.data.name;
+    if (parsed.data.color !== undefined) calendar.color = parsed.data.color;
+
+    writeStore(store);
+    return toSubscription(calendar);
+  },
+
   async importCalendar(
     input: ImportCalendarInput
   ): Promise<CalendarSubscription> {
@@ -432,7 +463,8 @@ export const localApi: ApiClient = {
     if (!calendar) throw new Error("Calendar not found");
     if (calendar.sourceType !== "url" || !calendar.url) return toSubscription(calendar);
 
-    if (!calendar.proxyUrl) {
+    const effectiveProxy = calendar.proxyUrl?.trim() || configuredProxyUrl();
+    if (!effectiveProxy) {
       calendar.lastError =
         "This calendar needs a proxy URL before it can be refreshed.";
       writeStore(store);
@@ -440,7 +472,8 @@ export const localApi: ApiClient = {
     }
 
     try {
-      calendar.rawIcs = await fetchViaProxy(calendar.proxyUrl, calendar.url);
+      calendar.rawIcs = await fetchViaProxy(effectiveProxy, calendar.url);
+      calendar.proxyUrl = effectiveProxy;
       calendar.lastFetchedAt = new Date().toISOString();
       calendar.lastError = null;
     } catch (error) {
@@ -453,19 +486,30 @@ export const localApi: ApiClient = {
 
   async refreshAllCalendars(): Promise<CalendarSubscription[]> {
     const store = readStore();
-    for (const calendar of store.calendars) {
-      if (calendar.sourceType !== "url" || !calendar.url || !calendar.proxyUrl) {
-        continue;
-      }
-      try {
-        calendar.rawIcs = await fetchViaProxy(calendar.proxyUrl, calendar.url);
-        calendar.lastFetchedAt = new Date().toISOString();
-        calendar.lastError = null;
-      } catch (error) {
-        calendar.lastError =
-          error instanceof Error ? error.message : "Could not refresh calendar";
-      }
-    }
+    const fallbackProxy = configuredProxyUrl();
+
+    await Promise.all(
+      store.calendars.map(async (calendar) => {
+        if (calendar.sourceType !== "url" || !calendar.url) return;
+
+        const effectiveProxy = calendar.proxyUrl?.trim() || fallbackProxy;
+        if (!effectiveProxy) {
+          calendar.lastError =
+            "This calendar needs a proxy URL before it can be refreshed.";
+          return;
+        }
+
+        try {
+          calendar.rawIcs = await fetchViaProxy(effectiveProxy, calendar.url);
+          calendar.proxyUrl = effectiveProxy;
+          calendar.lastFetchedAt = new Date().toISOString();
+          calendar.lastError = null;
+        } catch (error) {
+          calendar.lastError =
+            error instanceof Error ? error.message : "Could not refresh calendar";
+        }
+      })
+    );
     writeStore(store);
     return store.calendars.map(toSubscription);
   },

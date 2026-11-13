@@ -78,13 +78,14 @@ export function formatHour(hour: number): string {
   return `${String(hour).padStart(2, "0")}:00`;
 }
 
-export function weekLabel(start: Date): string {
+export function weekLabel(start: Date, locale: "zh" | "en" = "en"): string {
   const end = addDays(start, 6);
-  const startLabel = start.toLocaleDateString("en-US", {
+  const tag = locale === "zh" ? "zh-CN" : "en-US";
+  const startLabel = start.toLocaleDateString(tag, {
     month: "short",
     day: "numeric"
   });
-  const endLabel = end.toLocaleDateString("en-US", {
+  const endLabel = end.toLocaleDateString(tag, {
     month: "short",
     day: "numeric",
     year: "numeric"

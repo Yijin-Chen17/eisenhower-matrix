@@ -3195,6 +3195,13 @@ textarea {
   color: var(--text-muted);
 }
 
+.cal-sub-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .cal-sub-delete {
   padding: 0;
   border: 0;
@@ -3226,6 +3233,7 @@ textarea {
   background: transparent;
   color: var(--text-muted);
   font-size: 11px;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .cal-add-tabs button.active {
@@ -3238,6 +3246,64 @@ textarea {
 .cal-file-input {
   padding: 6px 8px;
   font-size: 11px;
+}
+
+.cal-export-modal {
+  width: 480px;
+}
+
+.cal-export-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cal-export-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.cal-export-summary {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.cal-export-summary.is-empty {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.cal-export-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cal-export-url-row .text-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btn:disabled,
+.small-btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }
 
 .cal-event-modal {

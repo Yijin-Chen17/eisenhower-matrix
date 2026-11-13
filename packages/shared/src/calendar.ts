@@ -1,5 +1,6 @@
 import ICAL from "ical.js";
 import { z } from "zod";
+import type { Task } from "./index";
 
 export const CALENDAR_SOURCE_TYPES = ["url", "file"] as const;
 export type CalendarSourceType = (typeof CALENDAR_SOURCE_TYPES)[number];
@@ -21,6 +22,10 @@ export interface CalendarEvent {
   start: string;
   end: string;
   allDay: boolean;
+  /** Inclusive start date (YYYY-MM-DD) for all-day events, avoiding timezone shifts. */
+  startDate?: string | null;
+  /** Exclusive end date (YYYY-MM-DD) for all-day events per RFC 5545. */
+  endDate?: string | null;
   location: string | null;
   notes: string | null;
   url: string | null;
@@ -60,6 +65,15 @@ export const importCalendarSchema = z.object({
   color: colorSchema.optional()
 });
 
+export const updateCalendarSubscriptionSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60).optional(),
+    color: colorSchema.optional()
+  })
+  .refine((data) => data.name !== undefined || data.color !== undefined, {
+    message: "Provide at least one field to update"
+  });
+
 export const calendarQuerySchema = z.object({
   start: isoDateTimeSchema,
   end: isoDateTimeSchema
@@ -69,6 +83,9 @@ export type CreateCalendarSubscriptionInput = z.infer<
   typeof createCalendarSubscriptionSchema
 >;
 export type ImportCalendarInput = z.infer<typeof importCalendarSchema>;
+export type UpdateCalendarSubscriptionInput = z.infer<
+  typeof updateCalendarSubscriptionSchema
+>;
 
 export function normalizeCalendarUrl(raw: string): string {
   const trimmed = raw.trim();
@@ -98,19 +115,71 @@ interface ParsedOccurrence {
   start: Date;
   end: Date;
   allDay: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
 }
+
+const WINDOWS_TIMEZONE_MAP: Record<string, string> = {
+  "china standard time": "Asia/Shanghai",
+  "taipei standard time": "Asia/Taipei",
+  "tokyo standard time": "Asia/Tokyo",
+  "korea standard time": "Asia/Seoul",
+  "singapore standard time": "Asia/Singapore",
+  "india standard time": "Asia/Kolkata",
+  "aus eastern standard time": "Australia/Sydney",
+  "gmt standard time": "Europe/London",
+  "greenwich standard time": "Atlantic/Reykjavik",
+  "w. europe standard time": "Europe/Berlin",
+  "central europe standard time": "Europe/Budapest",
+  "romance standard time": "Europe/Paris",
+  "eastern standard time": "America/New_York",
+  "central standard time": "America/Chicago",
+  "mountain standard time": "America/Denver",
+  "pacific standard time": "America/Los_Angeles",
+  "alaskan standard time": "America/Anchorage",
+  "hawaiian standard time": "Pacific/Honolulu",
+  "utc": "UTC"
+};
 
 const tzFormatters = new Map<string, Intl.DateTimeFormat | null>();
 
+function normalizeTzid(rawTzid: string): string {
+  let cleaned = rawTzid.trim().replace(/^"|"$/g, "");
+  // Strip common Olson prefix forms like /mozilla.org/20050126_1/Asia/Shanghai
+  if (cleaned.startsWith("/")) {
+    const segments = cleaned.split("/").filter(Boolean);
+    if (segments.length >= 3) {
+      cleaned = segments.slice(-2).join("/");
+    } else if (segments.length > 0) {
+      cleaned = segments.join("/");
+    }
+  }
+  const mapped = WINDOWS_TIMEZONE_MAP[cleaned.toLowerCase()];
+  return mapped ?? cleaned;
+}
+
+function parseFixedOffsetMs(tzid: string): number | null {
+  const match = tzid
+    .trim()
+    .match(/^(?:UTC|GMT)?\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?$/i);
+  if (!match) return null;
+  const sign = match[1] === "-" ? -1 : 1;
+  const hours = Number(match[2]);
+  const minutes = Number(match[3] ?? "0");
+  if (hours > 14 || minutes > 59) return null;
+  return sign * (hours * 60 + minutes) * 60_000;
+}
+
 function zoneFormatter(timeZone: string): Intl.DateTimeFormat | null {
-  if (tzFormatters.has(timeZone)) {
-    return tzFormatters.get(timeZone) ?? null;
+  const normalized = normalizeTzid(timeZone);
+  if (tzFormatters.has(normalized)) {
+    return tzFormatters.get(normalized) ?? null;
   }
 
   let formatter: Intl.DateTimeFormat | null = null;
   try {
     formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone,
+      timeZone: normalized,
       hourCycle: "h23",
       year: "numeric",
       month: "2-digit",
@@ -123,7 +192,7 @@ function zoneFormatter(timeZone: string): Intl.DateTimeFormat | null {
     formatter = null;
   }
 
-  tzFormatters.set(timeZone, formatter);
+  tzFormatters.set(normalized, formatter);
   return formatter;
 }
 
@@ -146,14 +215,11 @@ function zoneOffsetMs(formatter: Intl.DateTimeFormat, instant: number): number {
 }
 
 /**
- * Convert a wall-clock ICAL time to an absolute instant using the IANA zone it
- * references. Two passes are needed so that times close to a DST switch land on
- * the right side of the transition.
+ * Convert a wall-clock ICAL time to an absolute instant using the IANA/mapped
+ * zone or fixed offset it references. Two passes ensure times near DST switches
+ * land on the right side of the transition.
  */
 function wallClockToInstant(time: ICAL.Time, timeZone: string): Date | null {
-  const formatter = zoneFormatter(timeZone);
-  if (!formatter) return null;
-
   const wall = Date.UTC(
     time.year,
     time.month - 1,
@@ -163,6 +229,14 @@ function wallClockToInstant(time: ICAL.Time, timeZone: string): Date | null {
     time.second
   );
 
+  const fixedOffset = parseFixedOffsetMs(timeZone);
+  if (fixedOffset !== null) {
+    return new Date(wall - fixedOffset);
+  }
+
+  const formatter = zoneFormatter(timeZone);
+  if (!formatter) return null;
+
   const firstOffset = zoneOffsetMs(formatter, wall);
   const guess = wall - firstOffset;
   const secondOffset = zoneOffsetMs(formatter, guess);
@@ -170,27 +244,84 @@ function wallClockToInstant(time: ICAL.Time, timeZone: string): Date | null {
   return new Date(secondOffset === firstOffset ? guess : wall - secondOffset);
 }
 
+function toIcalDateKey(time: ICAL.Time): string {
+  const year = String(time.year).padStart(4, "0");
+  const month = String(time.month).padStart(2, "0");
+  const day = String(time.day).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dateKeyToUtcDate(dateKey: string): Date {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(year!, month! - 1, day!, 0, 0, 0, 0));
+}
+
+function addDaysToDateKey(dateKey: string, days: number): string {
+  const date = dateKeyToUtcDate(dateKey);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function hasVtimezoneObservances(zone: ICAL.Timezone | null | undefined): boolean {
+  const component = zone?.component;
+  if (!component) return false;
+  return Boolean(
+    component.getFirstSubcomponent("standard") ||
+      component.getFirstSubcomponent("daylight")
+  );
+}
+
+function propertyTzid(event: ICAL.Event, propName: "dtstart" | "dtend"): string {
+  const param = event.component.getFirstProperty(propName)?.getParameter("tzid");
+  return typeof param === "string" ? param.trim() : "";
+}
+
 /**
- * ical.js falls back to treating the value as UTC when a feed references a
- * TZID it cannot resolve (for example a VTIMEZONE block with no observances).
- * That shifts every event by the zone offset, so resolve such values through
- * `Intl` instead.
+ * ical.js falls back to treating the value as UTC or floating when a feed
+ * references a TZID without observances or omits VTIMEZONE entirely. Resolve
+ * such values through `Intl` / known zone mappings using the effective TZID.
  */
-function toDate(time: ICAL.Time | null | undefined): Date | null {
+function toDate(
+  time: ICAL.Time | null | undefined,
+  fallbackTzid?: string
+): Date | null {
   if (!time) return null;
 
-  const tzid = time.zone?.tzid ?? "";
+  if (time.isDate) {
+    return new Date(Date.UTC(time.year, time.month - 1, time.day, 0, 0, 0, 0));
+  }
+
+  const zoneTzid = time.zone?.tzid ?? "";
   if (
-    time.isDate ||
-    !tzid ||
-    tzid === "floating" ||
-    tzid === "UTC" ||
-    ICAL.TimezoneService.has(tzid)
+    zoneTzid === "UTC" ||
+    ICAL.TimezoneService.has(zoneTzid) ||
+    hasVtimezoneObservances(time.zone)
   ) {
     return time.toJSDate();
   }
 
-  return wallClockToInstant(time, tzid) ?? time.toJSDate();
+  const effectiveTzid =
+    zoneTzid && zoneTzid !== "floating"
+      ? zoneTzid
+      : (fallbackTzid ?? "").trim();
+
+  if (!effectiveTzid || effectiveTzid === "floating") {
+    return time.toJSDate();
+  }
+  if (effectiveTzid === "UTC") {
+    return new Date(
+      Date.UTC(
+        time.year,
+        time.month - 1,
+        time.day,
+        time.hour,
+        time.minute,
+        time.second
+      )
+    );
+  }
+
+  return wallClockToInstant(time, effectiveTzid) ?? time.toJSDate();
 }
 
 function textProperty(event: ICAL.Event, name: string): string | null {
@@ -198,10 +329,47 @@ function textProperty(event: ICAL.Event, name: string): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function eventEnd(event: ICAL.Event, start: Date, allDay: boolean): Date {
-  const end = toDate(event.endDate);
+function durationMs(event: ICAL.Event): number | null {
+  try {
+    const dur = event.duration;
+    if (!dur) return null;
+    const ms = dur.toSeconds() * 1000;
+    return ms > 0 ? ms : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveEnd(
+  explicitEnd: ICAL.Time | null | undefined,
+  event: ICAL.Event,
+  start: Date,
+  allDay: boolean,
+  fallbackTzid?: string
+): Date {
+  const end = toDate(explicitEnd, fallbackTzid);
   if (end && end.getTime() > start.getTime()) return end;
-  return new Date(start.getTime() + (allDay ? 86_400_000 : 3_600_000));
+  const fallbackMs = durationMs(event) ?? (allDay ? 86_400_000 : 3_600_000);
+  return new Date(start.getTime() + fallbackMs);
+}
+
+function resolveAllDayDates(
+  startTime: ICAL.Time,
+  endTime: ICAL.Time | null | undefined
+): { startDate: string; endDate: string; start: Date; end: Date } {
+  const startDate = toIcalDateKey(startTime);
+  const rawEndDate = endTime ? toIcalDateKey(endTime) : "";
+  const endDate =
+    rawEndDate && rawEndDate > startDate
+      ? rawEndDate
+      : addDaysToDateKey(startDate, 1);
+
+  return {
+    startDate,
+    endDate,
+    start: dateKeyToUtcDate(startDate),
+    end: dateKeyToUtcDate(endDate)
+  };
 }
 
 function overlaps(
@@ -218,15 +386,16 @@ function toCalendarEvent(
   occurrence: ParsedOccurrence,
   fallbackUid: string
 ): CalendarEvent {
-  const { event, start, end, allDay } = occurrence;
+  const { event, start, end, allDay, startDate, endDate } = occurrence;
   const uid = event.uid || fallbackUid;
   return {
-    id: `${uid}:${start.toISOString()}`,
+    id: `${subscriptionId}:${uid}:${start.toISOString()}`,
     subscriptionId,
     title: event.summary || "(No title)",
     start: start.toISOString(),
     end: end.toISOString(),
     allDay,
+    ...(allDay ? { startDate: startDate ?? null, endDate: endDate ?? null } : {}),
     location: event.location || null,
     notes: event.description || null,
     url: textProperty(event, "url")
@@ -235,7 +404,8 @@ function toCalendarEvent(
 
 /**
  * Parse an ICS feed and expand recurring events into the requested range.
- * Recurrence exceptions and EXDATEs are handled by ical.js.
+ * Recurrence exceptions and EXDATEs are handled by ical.js, while standalone
+ * RECURRENCE-ID components (without a master RRULE) are preserved.
  */
 export function parseCalendarEvents(
   ics: string,
@@ -250,31 +420,71 @@ export function parseCalendarEvents(
     throw new Error("Could not parse this calendar file.");
   }
 
+  const vevents = calendar.getAllSubcomponents("vevent");
+  const masterRecurringUids = new Set<string>();
+  for (const component of vevents) {
+    if (component.hasProperty("recurrence-id")) continue;
+    const candidate = new ICAL.Event(component);
+    if (candidate.isRecurring() && candidate.uid) {
+      masterRecurringUids.add(candidate.uid);
+    }
+  }
+
+  // Pad all-day range checks by 1 day on each side so server/client timezone
+  // differences never clip an all-day event; the UI matches exact YYYY-MM-DD keys.
+  const allDayRangeStart = new Date(rangeStart.getTime() - 86_400_000);
+  const allDayRangeEnd = new Date(rangeEnd.getTime() + 86_400_000);
+
   const events: CalendarEvent[] = [];
   const seen = new Set<string>();
   const maxEvents = 5000;
   const maxIterations = 100_000;
   let index = 0;
 
-  for (const component of calendar.getAllSubcomponents("vevent")) {
+  for (const component of vevents) {
     index++;
-    if (component.hasProperty("recurrence-id")) continue;
-
     const event = new ICAL.Event(component);
+
+    if (
+      component.hasProperty("recurrence-id") &&
+      event.uid &&
+      masterRecurringUids.has(event.uid)
+    ) {
+      continue;
+    }
+
     if (event.component.getFirstPropertyValue("status") === "CANCELLED") {
       continue;
     }
 
+    const startTzid = propertyTzid(event, "dtstart");
+    const endTzid = propertyTzid(event, "dtend") || startTzid;
+
     if (!event.isRecurring()) {
-      const start = toDate(event.startDate);
-      if (!start) continue;
-      const allDay = Boolean(event.startDate?.isDate);
-      const end = eventEnd(event, start, allDay);
-      if (!overlaps(start, end, rangeStart, rangeEnd)) continue;
+      if (!event.startDate) continue;
+      const allDay = Boolean(event.startDate.isDate);
+      let start: Date | null;
+      let end: Date;
+      let startDate: string | null = null;
+      let endDate: string | null = null;
+
+      if (allDay) {
+        const resolved = resolveAllDayDates(event.startDate, event.endDate);
+        start = resolved.start;
+        end = resolved.end;
+        startDate = resolved.startDate;
+        endDate = resolved.endDate;
+        if (!overlaps(start, end, allDayRangeStart, allDayRangeEnd)) continue;
+      } else {
+        start = toDate(event.startDate, startTzid);
+        if (!start) continue;
+        end = resolveEnd(event.endDate, event, start, false, endTzid);
+        if (!overlaps(start, end, rangeStart, rangeEnd)) continue;
+      }
 
       const parsed = toCalendarEvent(
         subscriptionId,
-        { event, start, end, allDay },
+        { event, start, end, allDay, startDate, endDate },
         `event-${index}`
       );
       if (!seen.has(parsed.id)) {
@@ -291,9 +501,10 @@ export function parseCalendarEvents(
       const next = iterator.next();
       if (!next) break;
 
-      const occurrenceStart = toDate(next);
+      const occurrenceStart = toDate(next, startTzid);
       if (!occurrenceStart) break;
-      if (occurrenceStart.getTime() > rangeEnd.getTime()) break;
+      const effectiveRangeEnd = next.isDate ? allDayRangeEnd : rangeEnd;
+      if (occurrenceStart.getTime() > effectiveRangeEnd.getTime()) break;
 
       const details = event.getOccurrenceDetails(next);
       const occurrenceEvent = details.item;
@@ -304,15 +515,31 @@ export function parseCalendarEvents(
         continue;
       }
 
-      const start = toDate(details.startDate);
-      if (!start) continue;
+      const occStartTzid = propertyTzid(occurrenceEvent, "dtstart") || startTzid;
+      const occEndTzid = propertyTzid(occurrenceEvent, "dtend") || occStartTzid;
       const allDay = Boolean(details.startDate.isDate);
-      const end = eventEnd(occurrenceEvent, start, allDay);
-      if (!overlaps(start, end, rangeStart, rangeEnd)) continue;
+      let start: Date | null;
+      let end: Date;
+      let startDate: string | null = null;
+      let endDate: string | null = null;
+
+      if (allDay) {
+        const resolved = resolveAllDayDates(details.startDate, details.endDate);
+        start = resolved.start;
+        end = resolved.end;
+        startDate = resolved.startDate;
+        endDate = resolved.endDate;
+        if (!overlaps(start, end, allDayRangeStart, allDayRangeEnd)) continue;
+      } else {
+        start = toDate(details.startDate, occStartTzid);
+        if (!start) continue;
+        end = resolveEnd(details.endDate, occurrenceEvent, start, false, occEndTzid);
+        if (!overlaps(start, end, rangeStart, rangeEnd)) continue;
+      }
 
       const parsed = toCalendarEvent(
         subscriptionId,
-        { event: occurrenceEvent, start, end, allDay },
+        { event: occurrenceEvent, start, end, allDay, startDate, endDate },
         `event-${index}`
       );
       if (!seen.has(parsed.id)) {
@@ -323,4 +550,194 @@ export function parseCalendarEvents(
   }
 
   return events.sort((a, b) => a.start.localeCompare(b.start));
+}
+
+export type CalendarExportScope = "scheduled" | "scheduled_and_due";
+
+export interface ExportTasksToIcsOptions {
+  calendarName?: string;
+  scope?: CalendarExportScope;
+  includeCompleted?: boolean;
+  now?: Date;
+}
+
+export interface ExportableCalendarCounts {
+  total: number;
+  scheduled: number;
+  due: number;
+}
+
+function escapeIcsText(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\r\n", "\n")
+    .replaceAll("\r", "\n")
+    .replaceAll("\n", "\\n")
+    .replaceAll(";", "\\;")
+    .replaceAll(",", "\\,");
+}
+
+function utf8CharBytes(char: string): number {
+  const cp = char.codePointAt(0) ?? 0;
+  if (cp <= 0x7f) return 1;
+  if (cp <= 0x7ff) return 2;
+  if (cp <= 0xffff) return 3;
+  return 4;
+}
+
+/** Fold an iCalendar content line at 75 UTF-8 octets per RFC 5545 Section 3.1. */
+function foldIcsLine(line: string): string {
+  const parts: string[] = [];
+  let current = "";
+  let currentBytes = 0;
+
+  for (const char of line) {
+    const charBytes = utf8CharBytes(char);
+    const limit = parts.length === 0 ? 75 : 74; // Continuation lines start with 1 space.
+    if (currentBytes + charBytes > limit && current.length > 0) {
+      parts.push(current);
+      current = char;
+      currentBytes = charBytes;
+    } else {
+      current += char;
+      currentBytes += charBytes;
+    }
+  }
+  if (current.length > 0) parts.push(current);
+
+  return parts.join("\r\n ");
+}
+
+function formatIcsUtcDateTime(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    String(date.getUTCFullYear()).padStart(4, "0") +
+    pad(date.getUTCMonth() + 1) +
+    pad(date.getUTCDate()) +
+    "T" +
+    pad(date.getUTCHours()) +
+    pad(date.getUTCMinutes()) +
+    pad(date.getUTCSeconds()) +
+    "Z"
+  );
+}
+
+function isExportableTask(task: Task, includeCompleted: boolean): boolean {
+  if (task.archivedAt !== null) return false;
+  if (!includeCompleted && task.status === "completed") return false;
+  return true;
+}
+
+function hasValidSchedule(task: Task): boolean {
+  if (!task.scheduledStart || !task.scheduledEnd) return false;
+  const start = new Date(task.scheduledStart).getTime();
+  const end = new Date(task.scheduledEnd).getTime();
+  return Number.isFinite(start) && Number.isFinite(end) && end > start;
+}
+
+function isValidDateKey(value: string | null): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+export function countExportableCalendarEvents(
+  tasks: Task[],
+  options: Pick<ExportTasksToIcsOptions, "scope" | "includeCompleted"> = {}
+): ExportableCalendarCounts {
+  const scope = options.scope ?? "scheduled_and_due";
+  const includeCompleted = options.includeCompleted ?? false;
+  let scheduled = 0;
+  let due = 0;
+
+  for (const task of tasks) {
+    if (!isExportableTask(task, includeCompleted)) continue;
+    if (hasValidSchedule(task)) {
+      scheduled++;
+    } else if (scope === "scheduled_and_due" && isValidDateKey(task.dueDate)) {
+      due++;
+    }
+  }
+
+  return { total: scheduled + due, scheduled, due };
+}
+
+function buildTaskDescription(task: Task, isDueOnly: boolean): string {
+  const lines: string[] = [];
+  if (isDueOnly) {
+    lines.push("Eisenhower Matrix · Due Date");
+  } else {
+    lines.push("Eisenhower Matrix · Time Block");
+  }
+  lines.push(`Importance: ${task.importance} | Urgency: ${task.urgency}`);
+  if (task.firstAction?.trim()) {
+    lines.push(`First step: ${task.firstAction.trim()}`);
+  }
+  if (task.checklists.length > 0) {
+    const done = task.checklists.filter((item) => item.done).length;
+    lines.push(`Checklist: ${done}/${task.checklists.length}`);
+  }
+  if (task.notes.trim()) {
+    lines.push("", task.notes.trim());
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Serialize Eisenhower Matrix tasks (scheduled blocks and optionally due dates)
+ * into an RFC 5545 compliant iCalendar (.ics) document.
+ */
+export function exportTasksToIcs(
+  tasks: Task[],
+  options: ExportTasksToIcsOptions = {}
+): string {
+  const calendarName = options.calendarName?.trim() || "Eisenhower Matrix";
+  const scope = options.scope ?? "scheduled_and_due";
+  const includeCompleted = options.includeCompleted ?? false;
+  const dtStamp = formatIcsUtcDateTime(options.now ?? new Date());
+
+  const lines: string[] = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Eisenhower Matrix//Calendar Export//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    `X-WR-CALNAME:${escapeIcsText(calendarName)}`
+  ];
+
+  for (const task of tasks) {
+    if (!isExportableTask(task, includeCompleted)) continue;
+
+    const scheduled = hasValidSchedule(task);
+    const dueOnly = !scheduled && scope === "scheduled_and_due" && isValidDateKey(task.dueDate);
+    if (!scheduled && !dueOnly) continue;
+
+    lines.push("BEGIN:VEVENT");
+    lines.push(
+      `UID:${task.id}${dueOnly ? "-due" : ""}@eisenhower-matrix`
+    );
+    lines.push(`DTSTAMP:${dtStamp}`);
+
+    if (scheduled) {
+      lines.push(`DTSTART:${formatIcsUtcDateTime(new Date(task.scheduledStart!))}`);
+      lines.push(`DTEND:${formatIcsUtcDateTime(new Date(task.scheduledEnd!))}`);
+    } else {
+      const startCompact = task.dueDate!.replaceAll("-", "");
+      const endCompact = addDaysToDateKey(task.dueDate!, 1).replaceAll("-", "");
+      lines.push(`DTSTART;VALUE=DATE:${startCompact}`);
+      lines.push(`DTEND;VALUE=DATE:${endCompact}`);
+      lines.push("TRANSP:TRANSPARENT");
+    }
+
+    lines.push(`SUMMARY:${escapeIcsText(task.title)}`);
+    lines.push(`DESCRIPTION:${escapeIcsText(buildTaskDescription(task, dueOnly))}`);
+    if (task.tags.length > 0) {
+      lines.push(
+        `CATEGORIES:${task.tags.map((tag) => escapeIcsText(tag.name)).join(",")}`
+      );
+    }
+    lines.push(`STATUS:${task.status === "completed" ? "COMPLETED" : "CONFIRMED"}`);
+    lines.push("END:VEVENT");
+  }
+
+  lines.push("END:VCALENDAR");
+  return lines.map(foldIcsLine).join("\r\n") + "\r\n";
 }

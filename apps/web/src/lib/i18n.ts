@@ -94,8 +94,10 @@ export const translations = {
     dragHint: "拖拽卡片至日历时间槽，或点击快速排期。",
     syncing: "同步中…",
     refreshBtn: "刷新",
+    exportBtn: "导出日历",
     calendarsBtn: "日历源管理",
     todayBtn: "今天",
+    allDayLabel: "全天",
     langSwitch: "中 / EN"
   },
   en: {
@@ -186,8 +188,10 @@ export const translations = {
     dragHint: "Drag cards into calendar time slots or click to block time.",
     syncing: "Syncing…",
     refreshBtn: "Refresh",
+    exportBtn: "Export",
     calendarsBtn: "Calendars",
     todayBtn: "Today",
+    allDayLabel: "All-day",
     langSwitch: "中 / EN"
   }
 } as const;

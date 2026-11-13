@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  countExportableCalendarEvents,
+  exportTasksToIcs,
   isValidCalendarIcs,
   normalizeCalendarUrl,
-  parseCalendarEvents
+  parseCalendarEvents,
+  type Task
 } from "@eisenhower/shared";
 import { combineLocal, layoutDayItems, timeFromIso } from "./calendar";
 
@@ -55,6 +58,8 @@ describe("calendar parsing", () => {
 
     const holiday = events.find((event) => event.title === "Holiday");
     expect(holiday?.allDay).toBe(true);
+    expect(holiday?.startDate).toBe("2026-10-20");
+    expect(holiday?.endDate).toBe("2026-10-21");
 
     const standups = events.filter(
       (event) =>
@@ -64,6 +69,57 @@ describe("calendar parsing", () => {
     expect(
       standups.some((event) => event.title === "Standup moved")
     ).toBe(true);
+
+    // Every non-overridden occurrence must keep its 15-minute duration, not fall back to 1h.
+    const secondStandup = standups.find(
+      (event) => event.start === "2026-10-20T01:00:00.000Z"
+    );
+    expect(secondStandup?.end).toBe("2026-10-20T01:15:00.000Z");
+  });
+
+  it("preserves standalone RECURRENCE-ID events without a master RRULE", () => {
+    const events = parseCalendarEvents(
+      `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//EN
+BEGIN:VEVENT
+UID:single-occ
+RECURRENCE-ID:20261020T090000Z
+SUMMARY:Single Exception Invite
+DTSTART:20261020T090000Z
+DTEND:20261020T094500Z
+END:VEVENT
+END:VCALENDAR`,
+      RANGE_START,
+      RANGE_END,
+      "calendar-1"
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.title).toBe("Single Exception Invite");
+    expect(events[0]?.end).toBe("2026-10-20T09:45:00.000Z");
+  });
+
+  it("resolves common Windows TZIDs without VTIMEZONE", () => {
+    const events = parseCalendarEvents(
+      `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//EN
+BEGIN:VEVENT
+UID:win-pst
+SUMMARY:US Sync
+DTSTART;TZID=Pacific Standard Time:20261019T090000
+DTEND;TZID=Pacific Standard Time:20261019T100000
+END:VEVENT
+END:VCALENDAR`,
+      RANGE_START,
+      RANGE_END,
+      "calendar-1"
+    );
+
+    // October 19 is PDT (UTC-7): 09:00 PDT = 16:00 UTC.
+    expect(events[0]?.start).toBe("2026-10-19T16:00:00.000Z");
+    expect(events[0]?.end).toBe("2026-10-19T17:00:00.000Z");
   });
 
   it("keeps the wall clock of a TZID whose VTIMEZONE is empty", () => {
@@ -143,5 +199,94 @@ describe("calendar layout helpers", () => {
     expect(a.conflict).toBe(true);
     expect(c.columns).toBe(1);
     expect(c.conflict).toBe(false);
+  });
+});
+
+function makeTask(overrides: Partial<Task>): Task {
+  return {
+    id: "t1",
+    title: "Task",
+    notes: "",
+    importance: 80,
+    urgency: 70,
+    dueDate: null,
+    scheduledStart: null,
+    scheduledEnd: null,
+    status: "active",
+    completedAt: null,
+    archivedAt: null,
+    recurrence: "none",
+    streak: 0,
+    lastCompletedAt: null,
+    firstAction: null,
+    checklists: [],
+    createdAt: "2026-10-18T00:00:00.000Z",
+    updatedAt: "2026-10-18T00:00:00.000Z",
+    tags: [],
+    ...overrides
+  };
+}
+
+describe("calendar ICS export", () => {
+  it("exports scheduled blocks and due-date tasks as round-trippable ICS", () => {
+    const tasks: Task[] = [
+      makeTask({
+        id: "t-sched",
+        title: "深度工作; 方案设计, 第一期",
+        notes: "Line 1\nLine 2",
+        firstAction: "打开文档",
+        scheduledStart: "2026-10-19T01:00:00.000Z",
+        scheduledEnd: "2026-10-19T02:30:00.000Z",
+        tags: [{ id: "tag1", name: "Work", color: "#4EA8FF" }]
+      }),
+      makeTask({
+        id: "t-due",
+        title: "Submit Tax",
+        dueDate: "2026-10-20"
+      }),
+      makeTask({
+        id: "t-done",
+        title: "Done Task",
+        status: "completed",
+        scheduledStart: "2026-10-21T03:00:00.000Z",
+        scheduledEnd: "2026-10-21T04:00:00.000Z"
+      }),
+      makeTask({
+        id: "t-arch",
+        title: "Archived Task",
+        archivedAt: "2026-10-18T00:00:00.000Z",
+        scheduledStart: "2026-10-21T05:00:00.000Z",
+        scheduledEnd: "2026-10-21T06:00:00.000Z"
+      })
+    ];
+
+    expect(countExportableCalendarEvents(tasks)).toEqual({
+      total: 2,
+      scheduled: 1,
+      due: 1
+    });
+    expect(
+      countExportableCalendarEvents(tasks, {
+        scope: "scheduled",
+        includeCompleted: true
+      })
+    ).toEqual({
+      total: 2,
+      scheduled: 2,
+      due: 0
+    });
+
+    const ics = exportTasksToIcs(tasks);
+    expect(isValidCalendarIcs(ics)).toBe(true);
+
+    const parsed = parseCalendarEvents(ics, RANGE_START, RANGE_END, "export");
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]?.title).toBe("深度工作; 方案设计, 第一期");
+    expect(parsed[0]?.start).toBe("2026-10-19T01:00:00.000Z");
+    expect(parsed[0]?.end).toBe("2026-10-19T02:30:00.000Z");
+    expect(parsed[1]?.title).toBe("Submit Tax");
+    expect(parsed[1]?.allDay).toBe(true);
+    expect(parsed[1]?.startDate).toBe("2026-10-20");
+    expect(parsed[1]?.endDate).toBe("2026-10-21");
   });
 });

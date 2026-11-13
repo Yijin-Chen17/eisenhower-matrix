@@ -966,10 +966,15 @@ export default function App() {
         ) : view === "calendar" ? (
           <CalendarView
             tasks={filteredTasks}
+            exportTasks={[
+              ...(activeQuery.data ?? []),
+              ...(completedQuery.data ?? [])
+            ]}
             threshold={settings.threshold}
             selectedId={selectedId}
             locale={locale}
             onSelect={handleSelect}
+            onToast={(message) => showToast(message)}
             onError={pushError}
           />
         ) : (

@@ -473,6 +473,29 @@ export function updateCalendarSubscriptionFetch(
   return changed ? getCalendarSubscription(db, id) : null;
 }
 
+export function updateCalendarSubscription(
+  db: AppDb,
+  id: string,
+  input: { name?: string; color?: string }
+): CalendarSubscription | null {
+  const patch: Partial<typeof calendarSubscriptionsTable.$inferInsert> = {};
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.color !== undefined) patch.color = input.color;
+
+  if (Object.keys(patch).length === 0) {
+    return getCalendarSubscription(db, id);
+  }
+
+  patch.updatedAt = nowIso();
+  const changed = db
+    .update(calendarSubscriptionsTable)
+    .set(patch)
+    .where(eq(calendarSubscriptionsTable.id, id))
+    .run().changes;
+
+  return changed ? getCalendarSubscription(db, id) : null;
+}
+
 export function deleteCalendarSubscription(db: AppDb, id: string): boolean {
   return (
     db

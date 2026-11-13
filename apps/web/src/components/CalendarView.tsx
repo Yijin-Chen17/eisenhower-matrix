@@ -44,14 +44,17 @@ import {
   type PositionedItem
 } from "../lib/calendar";
 import { CalendarsDialog } from "./CalendarsDialog";
+import { ExportCalendarDialog } from "./ExportCalendarDialog";
 import { translations, type Locale } from "../lib/i18n";
 
 interface CalendarViewProps {
   tasks: Task[];
+  exportTasks?: Task[];
   threshold: number;
   selectedId: string | null;
   locale?: Locale;
   onSelect: (task: Task) => void;
+  onToast?: (message: string) => void;
   onError: (message: string) => void;
 }
 
@@ -141,15 +144,18 @@ function sortDue(a: Task, b: Task): number {
 
 export function CalendarView({
   tasks,
+  exportTasks,
   threshold,
   selectedId,
   locale = "zh",
   onSelect,
+  onToast,
   onError
 }: CalendarViewProps) {
   const t = translations[locale];
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [sideTab, setSideTab] = useState<"due" | "unscheduled">("due");
   const [hourHeight, setHourHeight] = useState(HOUR_HEIGHT);
@@ -221,11 +227,15 @@ export function CalendarView({
         setSelectedEvent(null);
         return;
       }
+      if (exportOpen) {
+        setExportOpen(false);
+        return;
+      }
       if (dialogOpen) setDialogOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedEvent, dialogOpen]);
+  }, [selectedEvent, exportOpen, dialogOpen]);
 
   const todayKey = localDateKey(new Date());
   const weekStartKey = localDateKey(weekStart);
@@ -243,14 +253,16 @@ export function CalendarView({
 
       for (const event of events) {
         if (event.allDay) {
-          if (
-            overlaps(
-              event.start,
-              event.end,
-              date.toISOString(),
-              addDays(date, 1).toISOString()
-            )
-          ) {
+          const matches =
+            event.startDate && event.endDate
+              ? key >= event.startDate && key < event.endDate
+              : overlaps(
+                  event.start,
+                  event.end,
+                  date.toISOString(),
+                  addDays(date, 1).toISOString()
+                );
+          if (matches) {
             allDay.push(event);
           }
           continue;
@@ -332,7 +344,11 @@ export function CalendarView({
 
   async function refreshNow() {
     try {
-      await refreshAll.mutateAsync();
+      const updated = await refreshAll.mutateAsync();
+      const firstError = updated.find(
+        (item) => item.sourceType === "url" && item.lastError
+      )?.lastError;
+      if (firstError) onError(firstError);
     } catch (caught) {
       onError(
         caught instanceof Error ? caught.message : "Could not refresh calendars"
@@ -398,11 +414,14 @@ export function CalendarView({
           >
             ›
           </button>
-          <span className="cal-range">{weekLabel(weekStart)}</span>
+          <span className="cal-range">{weekLabel(weekStart, locale)}</span>
         </div>
 
         <div className="cal-actions">
           {eventsQuery.isFetching && <span className="cal-sync">{t.syncing}</span>}
+          <button className="small-btn" onClick={() => setExportOpen(true)}>
+            {t.exportBtn}
+          </button>
           <button className="small-btn" onClick={() => setDialogOpen(true)}>
             {t.calendarsBtn}
           </button>
@@ -546,15 +565,16 @@ export function CalendarView({
                   key={`head-${day.key}`}
                 >
                   <span>
-                    {day.date.toLocaleDateString("en-US", {
-                      weekday: "short"
-                    })}
+                    {day.date.toLocaleDateString(
+                      locale === "zh" ? "zh-CN" : "en-US",
+                      { weekday: "short" }
+                    )}
                   </span>
                   <strong>{day.date.getDate()}</strong>
                 </div>
               ))}
 
-              <div className="cal-allday-label">All-day</div>
+              <div className="cal-allday-label">{t.allDayLabel}</div>
               {dayData.map((day) => (
                 <div className="cal-allday-cell" key={`allday-${day.key}`}>
                   {day.allDay.map((event) => (
@@ -715,7 +735,18 @@ export function CalendarView({
 
       {dialogOpen && (
         <CalendarsDialog
+          locale={locale}
           onClose={() => setDialogOpen(false)}
+          onError={onError}
+        />
+      )}
+
+      {exportOpen && (
+        <ExportCalendarDialog
+          tasks={exportTasks ?? tasks}
+          locale={locale}
+          onClose={() => setExportOpen(false)}
+          onSuccess={(message) => onToast?.(message)}
           onError={onError}
         />
       )}
@@ -723,8 +754,10 @@ export function CalendarView({
       {selectedEvent && (
         <EventDialog
           event={selectedEvent}
+          locale={locale}
           calendarName={
-            calendarsById.get(selectedEvent.subscriptionId)?.name ?? "Calendar"
+            calendarsById.get(selectedEvent.subscriptionId)?.name ??
+            (locale === "zh" ? "外部日历" : "Calendar")
           }
           onClose={() => setSelectedEvent(null)}
         />
@@ -765,22 +798,59 @@ function DueTask({
   );
 }
 
+function formatLocalDateKey(dateKey: string, locale: Locale): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year!, month! - 1, day!).toLocaleDateString(
+    locale === "zh" ? "zh-CN" : "en-US",
+    {
+      weekday: "long",
+      month: "long",
+      day: "numeric"
+    }
+  );
+}
+
+function inclusiveEndDateKey(endDateKey: string): string {
+  const [year, month, day] = endDateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day!));
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
 function EventDialog({
   event,
   calendarName,
+  locale = "zh",
   onClose
 }: {
   event: CalendarEvent;
   calendarName: string;
+  locale?: Locale;
   onClose: () => void;
 }) {
-  const dateLabel = new Date(event.start).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric"
-  });
+  const isZh = locale === "zh";
+  let dateLabel: string;
+  if (event.allDay && event.startDate) {
+    const startText = formatLocalDateKey(event.startDate, locale);
+    const lastDay = event.endDate ? inclusiveEndDateKey(event.endDate) : event.startDate;
+    dateLabel =
+      lastDay > event.startDate
+        ? `${startText} – ${formatLocalDateKey(lastDay, locale)}`
+        : startText;
+  } else {
+    dateLabel = new Date(event.start).toLocaleDateString(
+      isZh ? "zh-CN" : "en-US",
+      {
+        weekday: "long",
+        month: "long",
+        day: "numeric"
+      }
+    );
+  }
   const range = event.allDay
-    ? "All day"
+    ? isZh
+      ? "全天"
+      : "All day"
     : `${formatTime(event.start)} – ${formatTime(event.end)}`;
 
   return (
@@ -794,7 +864,7 @@ function EventDialog({
         className="modal cal-event-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Calendar event"
+        aria-label={isZh ? "日历日程详情" : "Calendar event"}
       >
         <div className="modal-header">
           <div>
@@ -803,7 +873,11 @@ function EventDialog({
               {calendarName} · {dateLabel} · {range}
             </p>
           </div>
-          <button className="drawer-close" onClick={onClose} aria-label="Close">
+          <button
+            className="drawer-close"
+            onClick={onClose}
+            aria-label={isZh ? "关闭" : "Close"}
+          >
             ×
           </button>
         </div>
@@ -811,21 +885,21 @@ function EventDialog({
         <div className="cal-event-details">
           {event.location && (
             <p>
-              <strong>Location</strong>
+              <strong>{isZh ? "地点" : "Location"}</strong>
               {event.location}
             </p>
           )}
           {event.notes && <p className="cal-event-notes">{event.notes}</p>}
           {event.url && (
             <a href={event.url} target="_blank" rel="noreferrer">
-              Open event link
+              {isZh ? "打开日程链接" : "Open event link"}
             </a>
           )}
         </div>
 
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>
-            Close
+            {isZh ? "关闭" : "Close"}
           </button>
         </div>
       </div>
