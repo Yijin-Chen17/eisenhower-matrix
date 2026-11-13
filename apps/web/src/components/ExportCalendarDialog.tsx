@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   countExportableCalendarEvents,
   exportTasksToIcs,
+  getDefaultCalendarExportRange,
   type CalendarExportScope,
   type Task
 } from "@eisenhower/shared";
 import { buildCalendarExportPath, isStaticDataMode } from "../api";
+import { useCalendarEvents } from "../hooks";
 import type { Locale } from "../lib/i18n";
 import { localDateKey } from "../lib/calendar";
 
@@ -27,8 +29,16 @@ export function ExportCalendarDialog({
   const isZh = locale === "zh";
   const [scope, setScope] = useState<CalendarExportScope>("scheduled_and_due");
   const [includeCompleted, setIncludeCompleted] = useState(false);
+  const [includeExternal, setIncludeExternal] = useState(true);
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
+
+  const exportRange = useMemo(() => getDefaultCalendarExportRange(), []);
+  const { data: loadedExternalEvents = [] } = useCalendarEvents(
+    includeExternal ? exportRange.start.toISOString() : null,
+    includeExternal ? exportRange.end.toISOString() : null
+  );
+  const externalEvents = includeExternal ? loadedExternalEvents : [];
 
   useEffect(() => {
     return () => {
@@ -42,25 +52,31 @@ export function ExportCalendarDialog({
     () =>
       countExportableCalendarEvents(tasks, {
         scope,
-        includeCompleted
+        includeCompleted,
+        externalEvents
       }),
-    [tasks, scope, includeCompleted]
+    [tasks, scope, includeCompleted, externalEvents]
   );
 
   const feedUrl = useMemo(() => {
     if (isStaticDataMode) return "";
-    const path = buildCalendarExportPath({ scope, includeCompleted });
+    const path = buildCalendarExportPath({
+      scope,
+      includeCompleted,
+      includeExternal
+    });
     return typeof window !== "undefined"
       ? `${window.location.origin}${path}`
       : path;
-  }, [scope, includeCompleted]);
+  }, [scope, includeCompleted, includeExternal]);
 
   function downloadIcs() {
     try {
       const ics = exportTasksToIcs(tasks, {
         calendarName: isZh ? "艾森豪威尔矩阵" : "Eisenhower Matrix",
         scope,
-        includeCompleted
+        includeCompleted,
+        externalEvents
       });
       const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -109,20 +125,24 @@ export function ExportCalendarDialog({
     }
   }
 
-  const summaryText =
-    counts.total === 0
-      ? isZh
-        ? "当前条件下暂无可导出的排程时间块或截止任务。"
-        : "No scheduled blocks or due dates match these export options."
-      : isZh
-        ? `共 ${counts.total} 条日程（${counts.scheduled} 个排程时间块${
-            scope === "scheduled_and_due"
-              ? ` · ${counts.due} 个截止日期提醒`
-              : ""
-          }）`
-        : `${counts.total} event${counts.total === 1 ? "" : "s"} ready (${counts.scheduled} scheduled${
-            scope === "scheduled_and_due" ? ` · ${counts.due} due` : ""
-          })`;
+  const summaryText = useMemo(() => {
+    if (counts.total === 0) {
+      return isZh
+        ? "当前条件下暂无可导出的排程时间块、截止任务或外部日历日程。"
+        : "No scheduled blocks, due dates, or external events match these options.";
+    }
+    const parts: string[] = [];
+    if (isZh) {
+      parts.push(`${counts.scheduled} 个排程时间块`);
+      if (scope === "scheduled_and_due") parts.push(`${counts.due} 个截止日期`);
+      if (includeExternal) parts.push(`${counts.external} 条外部日程`);
+      return `共 ${counts.total} 条日程（${parts.join(" · ")}）`;
+    }
+    parts.push(`${counts.scheduled} scheduled`);
+    if (scope === "scheduled_and_due") parts.push(`${counts.due} due`);
+    if (includeExternal) parts.push(`${counts.external} external`);
+    return `${counts.total} event${counts.total === 1 ? "" : "s"} ready (${parts.join(" · ")})`;
+  }, [counts, includeExternal, isZh, scope]);
 
   return (
     <div
@@ -196,6 +216,19 @@ export function ExportCalendarDialog({
           </span>
         </label>
 
+        <label className="cal-export-toggle">
+          <input
+            type="checkbox"
+            checked={includeExternal}
+            onChange={(event) => setIncludeExternal(event.target.checked)}
+          />
+          <span>
+            {isZh
+              ? "包含已导入的外部日历日程（近一年范围）"
+              : "Include imported external calendar events"}
+          </span>
+        </label>
+
         <div
           className={`cal-export-summary${counts.total === 0 ? " is-empty" : ""}`}
         >
@@ -232,8 +265,8 @@ export function ExportCalendarDialog({
             </div>
             <p className="hint">
               {isZh
-                ? "本地服务运行时，可在 Apple 日历等客户端中添加此链接作为实时订阅源。"
-                : "While the local server is running, external calendar apps can subscribe directly to this URL."}
+                ? "本地服务运行时，可在 Apple 日历（文件 → 新建日历订阅）中添加此链接，建议将自动刷新设为每 15 分钟（或按 ⌘R 手动刷新）。"
+                : "While the local server is running, subscribe in Apple Calendar (File → New Calendar Subscription) and set Auto-refresh to every 15 minutes (or press ⌘R to refresh)."}
             </p>
           </div>
         ) : (

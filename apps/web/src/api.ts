@@ -214,11 +214,13 @@ export const isStaticDataMode = useLocalData;
 export function buildCalendarExportPath(options: {
   scope: CalendarExportScope;
   includeCompleted: boolean;
+  includeExternal?: boolean;
   download?: boolean;
 }): string {
   const params = new URLSearchParams({
     scope: options.scope,
-    includeCompleted: options.includeCompleted ? "1" : "0"
+    includeCompleted: options.includeCompleted ? "1" : "0",
+    includeExternal: options.includeExternal === false ? "0" : "1"
   });
   if (options.download) params.set("download", "1");
   return `/api/calendar/export.ics?${params}`;

@@ -558,6 +558,7 @@ export interface ExportTasksToIcsOptions {
   calendarName?: string;
   scope?: CalendarExportScope;
   includeCompleted?: boolean;
+  externalEvents?: CalendarEvent[];
   now?: Date;
 }
 
@@ -565,6 +566,21 @@ export interface ExportableCalendarCounts {
   total: number;
   scheduled: number;
   due: number;
+  external: number;
+}
+
+const EXPORT_LOOKBACK_DAYS = 60;
+const EXPORT_LOOKAHEAD_DAYS = 300;
+
+/** Default 360-day window used when exporting imported external calendar feeds. */
+export function getDefaultCalendarExportRange(now = new Date()): {
+  start: Date;
+  end: Date;
+} {
+  return {
+    start: new Date(now.getTime() - EXPORT_LOOKBACK_DAYS * 86_400_000),
+    end: new Date(now.getTime() + EXPORT_LOOKAHEAD_DAYS * 86_400_000)
+  };
 }
 
 function escapeIcsText(value: string): string {
@@ -641,7 +657,10 @@ function isValidDateKey(value: string | null): value is string {
 
 export function countExportableCalendarEvents(
   tasks: Task[],
-  options: Pick<ExportTasksToIcsOptions, "scope" | "includeCompleted"> = {}
+  options: Pick<
+    ExportTasksToIcsOptions,
+    "scope" | "includeCompleted" | "externalEvents"
+  > = {}
 ): ExportableCalendarCounts {
   const scope = options.scope ?? "scheduled_and_due";
   const includeCompleted = options.includeCompleted ?? false;
@@ -657,7 +676,8 @@ export function countExportableCalendarEvents(
     }
   }
 
-  return { total: scheduled + due, scheduled, due };
+  const external = options.externalEvents?.length ?? 0;
+  return { total: scheduled + due + external, scheduled, due, external };
 }
 
 function buildTaskDescription(task: Task, isDueOnly: boolean): string {
@@ -700,7 +720,9 @@ export function exportTasksToIcs(
     "PRODID:-//Eisenhower Matrix//Calendar Export//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    `X-WR-CALNAME:${escapeIcsText(calendarName)}`
+    `X-WR-CALNAME:${escapeIcsText(calendarName)}`,
+    "X-PUBLISHED-TTL:PT15M",
+    "REFRESH-INTERVAL;VALUE=DURATION:PT15M"
   ];
 
   for (const task of tasks) {
@@ -734,7 +756,52 @@ export function exportTasksToIcs(
         `CATEGORIES:${task.tags.map((tag) => escapeIcsText(tag.name)).join(",")}`
       );
     }
-    lines.push(`STATUS:${task.status === "completed" ? "COMPLETED" : "CONFIRMED"}`);
+    lines.push("STATUS:CONFIRMED");
+    lines.push("END:VEVENT");
+  }
+
+  for (const event of options.externalEvents ?? []) {
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:${event.id}@eisenhower-matrix-ext`);
+    lines.push(`DTSTAMP:${dtStamp}`);
+
+    if (event.allDay && isValidDateKey(event.startDate ?? null)) {
+      const startKey = event.startDate!;
+      const endKey =
+        isValidDateKey(event.endDate ?? null) && event.endDate! > startKey
+          ? event.endDate!
+          : addDaysToDateKey(startKey, 1);
+      lines.push(`DTSTART;VALUE=DATE:${startKey.replaceAll("-", "")}`);
+      lines.push(`DTEND;VALUE=DATE:${endKey.replaceAll("-", "")}`);
+      lines.push("TRANSP:TRANSPARENT");
+    } else {
+      const startDate = new Date(event.start);
+      const endDate = new Date(event.end);
+      if (
+        !Number.isFinite(startDate.getTime()) ||
+        !Number.isFinite(endDate.getTime()) ||
+        endDate.getTime() <= startDate.getTime()
+      ) {
+        lines.pop();
+        lines.pop();
+        lines.pop();
+        continue;
+      }
+      lines.push(`DTSTART:${formatIcsUtcDateTime(startDate)}`);
+      lines.push(`DTEND:${formatIcsUtcDateTime(endDate)}`);
+    }
+
+    lines.push(`SUMMARY:${escapeIcsText(event.title || "Untitled event")}`);
+    if (event.location?.trim()) {
+      lines.push(`LOCATION:${escapeIcsText(event.location.trim())}`);
+    }
+    if (event.notes?.trim()) {
+      lines.push(`DESCRIPTION:${escapeIcsText(event.notes.trim())}`);
+    }
+    if (event.url?.trim()) {
+      lines.push(`URL:${event.url.trim()}`);
+    }
+    lines.push("STATUS:CONFIRMED");
     lines.push("END:VEVENT");
   }
 

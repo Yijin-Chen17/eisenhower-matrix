@@ -399,6 +399,58 @@ describe("API", () => {
     expect(scheduledParsed.map((item) => item.title)).toEqual(["Deep Work"]);
   });
 
+  it("includes imported external calendar events in ICS export unless disabled", async () => {
+    const tomorrow = new Date(Date.now() + 86_400_000);
+    const yyyy = tomorrow.getUTCFullYear();
+    const mm = String(tomorrow.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(tomorrow.getUTCDate()).padStart(2, "0");
+    const dateCompact = `${yyyy}${mm}${dd}`;
+    const externalIcs = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:ext-class-1",
+      `DTSTART:${dateCompact}T090000Z`,
+      `DTEND:${dateCompact}T100000Z`,
+      "SUMMARY:Robotics Lecture",
+      "LOCATION:Room 406",
+      "END:VEVENT",
+      "END:VCALENDAR"
+    ].join("\r\n");
+
+    const imported = await request(
+      "/api/calendar/import",
+      json({ name: "University", ics: externalIcs })
+    );
+    expect(imported.response.status).toBe(201);
+
+    const rangeStart = new Date(Date.now() - 2 * 86_400_000);
+    const rangeEnd = new Date(Date.now() + 5 * 86_400_000);
+
+    const defaultExport = await app.request("/api/calendar/export.ics");
+    expect(defaultExport.status).toBe(200);
+    const parsedDefault = parseCalendarEvents(
+      await defaultExport.text(),
+      rangeStart,
+      rangeEnd,
+      "export"
+    );
+    expect(parsedDefault.map((item) => item.title)).toContain("Robotics Lecture");
+
+    const withoutExternal = await app.request(
+      "/api/calendar/export.ics?includeExternal=0"
+    );
+    const parsedWithoutExternal = parseCalendarEvents(
+      await withoutExternal.text(),
+      rangeStart,
+      rangeEnd,
+      "export"
+    );
+    expect(parsedWithoutExternal.map((item) => item.title)).not.toContain(
+      "Robotics Lecture"
+    );
+  });
+
   it("handles recurring routine task progression, streak, and subtasks", async () => {
     const created = await request(
       "/api/tasks",

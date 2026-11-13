@@ -7,6 +7,7 @@ import {
   createTagSchema,
   createTaskSchema,
   exportTasksToIcs,
+  getDefaultCalendarExportRange,
   importCalendarSchema,
   isValidCalendarIcs,
   listTasksQuerySchema,
@@ -292,6 +293,9 @@ export function createApp(db: AppDb) {
     const includeCompletedParam = c.req.query("includeCompleted");
     const includeCompleted =
       includeCompletedParam === "1" || includeCompletedParam === "true";
+    const includeExternalParam = c.req.query("includeExternal");
+    const includeExternal =
+      includeExternalParam !== "0" && includeExternalParam !== "false";
     const downloadParam = c.req.query("download");
     const asAttachment = downloadParam === "1" || downloadParam === "true";
 
@@ -299,9 +303,16 @@ export function createApp(db: AppDb) {
     const completed = includeCompleted
       ? listTasks(db, { view: "completed" })
       : [];
+    const externalEvents = includeExternal
+      ? (() => {
+          const { start, end } = getDefaultCalendarExportRange();
+          return collectExternalCalendarEvents(db, start, end);
+        })()
+      : [];
     const ics = exportTasksToIcs([...active, ...completed], {
       scope,
-      includeCompleted
+      includeCompleted,
+      externalEvents
     });
 
     return c.body(ics, 200, {
@@ -335,26 +346,7 @@ export function createApp(db: AppDb) {
       });
     }
 
-    const events: CalendarEvent[] = [];
-    for (const feed of listCalendarIcs(db)) {
-      if (!feed.rawIcs) continue;
-      try {
-        events.push(
-          ...parseCalendarEvents(feed.rawIcs, start, end, feed.id)
-        );
-      } catch {
-        // A broken feed should not hide events from the other calendars.
-      }
-    }
-
-    const seen = new Set<string>();
-    const unique = events.filter((event) => {
-      if (seen.has(event.id)) return false;
-      seen.add(event.id);
-      return true;
-    });
-
-    return c.json(unique.sort((a, b) => a.start.localeCompare(b.start)));
+    return c.json(collectExternalCalendarEvents(db, start, end));
   });
 
   app.notFound((c) => c.json({ error: { message: "Not found" } }, 404));
@@ -368,4 +360,29 @@ export function createApp(db: AppDb) {
   });
 
   return app;
+}
+
+function collectExternalCalendarEvents(
+  db: AppDb,
+  start: Date,
+  end: Date
+): CalendarEvent[] {
+  const events: CalendarEvent[] = [];
+  for (const feed of listCalendarIcs(db)) {
+    if (!feed.rawIcs) continue;
+    try {
+      events.push(...parseCalendarEvents(feed.rawIcs, start, end, feed.id));
+    } catch {
+      // A broken feed should not hide events from the other calendars.
+    }
+  }
+
+  const seen = new Set<string>();
+  return events
+    .filter((event) => {
+      if (seen.has(event.id)) return false;
+      seen.add(event.id);
+      return true;
+    })
+    .sort((a, b) => a.start.localeCompare(b.start));
 }

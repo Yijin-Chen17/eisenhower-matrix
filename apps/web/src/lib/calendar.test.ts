@@ -263,7 +263,8 @@ describe("calendar ICS export", () => {
     expect(countExportableCalendarEvents(tasks)).toEqual({
       total: 2,
       scheduled: 1,
-      due: 1
+      due: 1,
+      external: 0
     });
     expect(
       countExportableCalendarEvents(tasks, {
@@ -273,7 +274,8 @@ describe("calendar ICS export", () => {
     ).toEqual({
       total: 2,
       scheduled: 2,
-      due: 0
+      due: 0,
+      external: 0
     });
 
     const ics = exportTasksToIcs(tasks);
